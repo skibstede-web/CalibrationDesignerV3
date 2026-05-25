@@ -1,0 +1,17 @@
+batch_id,batch_name,batch_role,source,locked,forced,derived_batch,parent_batch_a,parent_batch_b,fraction_from_a,assigned_strength_models,preparation_route,batch_size_kg,api_pure_mg_g,api_content_mg_mg,api_ds_total_mg_g,api_impurity_mg_g,balance_mg_g,sum_weighed_components_mg_g,SNAC_mg_g,Niacinamide_mg_g,Glidant_mg_g,Lactose_mg_g
+CAL-001,Calibration 001,calibration,generated,False,False,False,,,,,direct,1.0,10.0,0.8,12.5,2.5,960.5,1000.0,20.0,5.0,2.0,960.5
+CAL-002,Calibration 002,calibration,generated,False,False,False,,,,,direct,1.0,60.0,0.8,75.0,15.0,848.1666666666666,1000.0,45.0,23.333333333333332,8.5,848.1666666666666
+CAL-003,Calibration 003,calibration,generated,False,False,False,,,,,direct,1.0,20.0,0.8,25.0,5.0,848.3333333333334,1000.0,70.0,41.666666666666664,15.0,848.3333333333334
+CAL-004,Calibration 004,calibration,generated,False,False,False,,,,,direct,1.0,30.0,0.8,37.5,7.5,805.5,1000.0,95.0,60.0,2.0,805.5
+CAL-005,Calibration 005,calibration,generated,False,False,False,,,,,direct,1.0,40.0,0.8,50.0,10.0,823.0,1000.0,120.0,5.0,2.0,823.0
+CAL-006,Calibration 006,calibration,generated,False,False,False,,,,,direct,1.0,50.0,0.8,62.5,12.5,910.5,1000.0,20.0,5.0,2.0,910.5
+CAL-007,Calibration 007,calibration,generated,False,False,False,,,,,direct,1.0,20.0,0.8,25.0,5.0,948.0,1000.0,20.0,5.0,2.0,948.0
+CAL-008,Calibration 008,calibration,generated,False,False,False,,,,,direct,1.0,30.0,0.8,37.5,7.5,935.5,1000.0,20.0,5.0,2.0,935.5
+CAL-009,Calibration 009,calibration,generated,False,False,False,,,,,direct,1.0,40.0,0.8,50.0,10.0,923.0,1000.0,20.0,5.0,2.0,923.0
+CAL-010,Calibration 010,calibration,generated,False,False,False,,,,,direct,1.0,60.0,0.8,75.0,15.0,898.0,1000.0,20.0,5.0,2.0,898.0
+CAL-011,Calibration 011,calibration,generated,False,False,False,,,,,direct,1.0,10.0,0.8,12.5,2.5,935.5,1000.0,45.0,5.0,2.0,935.5
+CAL-012,Calibration 012,calibration,generated,False,False,False,,,,,direct,1.0,20.0,0.8,25.0,5.0,923.0,1000.0,45.0,5.0,2.0,923.0
+CAL-013,Calibration 013,calibration,generated,False,False,False,,,,,direct,1.0,30.0,0.8,37.5,7.5,910.5,1000.0,45.0,5.0,2.0,910.5
+CAL-014,Calibration 014,calibration,generated,False,False,False,,,,,direct,1.0,40.0,0.8,50.0,10.0,898.0,1000.0,45.0,5.0,2.0,898.0
+CAL-015,Calibration 015,calibration,generated,False,False,False,,,,,direct,1.0,50.0,0.8,62.5,12.5,885.5,1000.0,45.0,5.0,2.0,885.5
+CAL-016,Calibration 016,calibration,generated,False,False,False,,,,,direct,1.0,60.0,0.8,75.0,15.0,873.0,1000.0,45.0,5.0,2.0,873.0

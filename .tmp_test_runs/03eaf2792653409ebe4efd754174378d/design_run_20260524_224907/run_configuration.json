@@ -1,0 +1,119 @@
+{
+  "components": [
+    {
+      "name": "API",
+      "is_api": true,
+      "is_balance": false
+    },
+    {
+      "name": "SNAC",
+      "is_api": false,
+      "is_balance": false
+    },
+    {
+      "name": "Niacinamide",
+      "is_api": false,
+      "is_balance": false
+    },
+    {
+      "name": "Glidant",
+      "is_api": false,
+      "is_balance": false
+    },
+    {
+      "name": "Lactose",
+      "is_api": false,
+      "is_balance": true
+    }
+  ],
+  "api_content_mg_mg": 0.8,
+  "product_strengths": [
+    {
+      "name": "1%",
+      "component_targets_mg_g": {
+        "API": 10.0,
+        "SNAC": 60.0,
+        "Niacinamide": 20.0,
+        "Glidant": 6.0
+      }
+    },
+    {
+      "name": "3%",
+      "component_targets_mg_g": {
+        "API": 30.0,
+        "SNAC": 70.0,
+        "Niacinamide": 25.0,
+        "Glidant": 8.0
+      }
+    },
+    {
+      "name": "6%",
+      "component_targets_mg_g": {
+        "API": 60.0,
+        "SNAC": 90.0,
+        "Niacinamide": 30.0,
+        "Glidant": 10.0
+      }
+    }
+  ],
+  "component_constraints": [
+    {
+      "component_name": "API",
+      "min_mg_g": 10.0,
+      "max_mg_g": 60.0,
+      "preferred_levels": 6
+    },
+    {
+      "component_name": "SNAC",
+      "min_mg_g": 20.0,
+      "max_mg_g": 120.0,
+      "preferred_levels": 5
+    },
+    {
+      "component_name": "Niacinamide",
+      "min_mg_g": 5.0,
+      "max_mg_g": 60.0,
+      "preferred_levels": 4
+    },
+    {
+      "component_name": "Glidant",
+      "min_mg_g": 2.0,
+      "max_mg_g": 15.0,
+      "preferred_levels": 3
+    },
+    {
+      "component_name": "Lactose",
+      "min_mg_g": 600.0,
+      "max_mg_g": 980.0,
+      "preferred_levels": 1
+    }
+  ],
+  "objective_settings": {
+    "use_constrained_mixture_design": true,
+    "reduce_api_excipient_correlation": true,
+    "improve_api_specificity": true,
+    "include_target_strengths_in_calibration_design": false,
+    "allow_reuse_across_strength_models": true,
+    "reduce_redundant_overlap_between_strengths": true,
+    "minimize_api_material_consumption": false,
+    "prefer_fewer_calibration_batches": false,
+    "allow_non_nominal_excipient_ratios": true
+  },
+  "batch_settings": {
+    "desired_batches": 16,
+    "min_batches": 10,
+    "max_batches": 24,
+    "default_batch_size": 1.0,
+    "batch_size_unit": "kg",
+    "allow_different_batch_sizes": false,
+    "min_batch_size": 1.0,
+    "max_batch_size": 1.0,
+    "include_replicates": false,
+    "replicate_count": 0,
+    "replicate_type": "exact"
+  },
+  "manual_batches": [],
+  "seed": 123,
+  "tolerance_mg_g": 1e-06,
+  "exported_at": "2026-05-24T22:49:08"
+}

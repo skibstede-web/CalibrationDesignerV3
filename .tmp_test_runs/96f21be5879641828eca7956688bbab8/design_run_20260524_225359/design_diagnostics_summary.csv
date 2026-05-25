@@ -1,0 +1,9 @@
+metric,value,threshold,status,interpretation
+batch_count,16.0,>= 1,PASS,Number of selected calibration batches.
+api_unique_levels,6.0,>= 2 recommended,PASS,Number of unique API levels in final design.
+non_api_unique_levels_total,12.0,>= number_of_excipients,PASS,Total unique levels across non-API non-balance components.
+api_range_mg_g,50.0,> 0,PASS,API concentration range in mg/g.
+max_abs_api_excipient_correlation,0.10452664462450582,<= 0.80,PASS,Maximum absolute API-excipient correlation.
+api_vif_excluding_balance,1.01176769387064,<= 5,PASS,API VIF from non-API non-balance components.
+api_vs_snac_correlation,-0.033733960416003725,informative,INFO,API correlation with SNAC.
+api_vs_niacinamide_correlation,-0.10452664462450582,informative,INFO,API correlation with Niacinamide.

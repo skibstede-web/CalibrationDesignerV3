@@ -1,0 +1,19 @@
+# .codex/config.toml — project-scoped Codex configuration
+#
+# Intended for an unattended but workspace-limited build of CalibrationDesignerV3.
+# It avoids danger-full-access. Codex should only write inside the trusted workspace.
+#
+# If your installed Codex build does not recognize the model name below, select the
+# desired Codex model manually in the Codex app/IDE and keep the rest of this config.
+
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+
+[windows]
+sandbox = "elevated"
+
+[sandbox_workspace_write]
+network_access = true
