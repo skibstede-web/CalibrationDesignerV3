@@ -34,18 +34,44 @@ from calibration_designer_v3.ui.input_state import (
     evaluate_strength_totals,
 )
 
+COLORS = {
+    "primary": "#12355B",
+    "accent": "#F28C28",
+    "background": "#FAF7F2",
+    "panel": "#FFFFFF",
+    "secondary_panel": "#EEF3F7",
+    "text": "#0B1F33",
+    "secondary_text": "#5F6C7B",
+    "border": "#D8E0E8",
+    "warning_bg": "#FFF4DD",
+}
+
+STATUS_COLORS = {
+    "info": "#1976D2",
+    "warning": "#F9A825",
+    "error": "#C62828",
+    "success": "#2E7D32",
+}
+
+DEFAULT_TK_FONT = "{Segoe UI} 10"
+
 
 class CalibrationDesignerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("CalibrationDesignerV3")
-        self.root.geometry("1300x860")
+        self.root.geometry("1500x920")
+        self.root.minsize(1200, 760)
+        self.root.configure(bg=COLORS["background"])
+        self.root.option_add("*Font", DEFAULT_TK_FONT)
 
         self.config: RunConfig = build_example_run_config()
         self.pipeline_result: PipelineResult | None = None
         self.last_output_folder: Path | None = None
 
         self.manual_rows: list[ManualBatchInputRow] = []
+        self._manual_collapsed = True
+        self._header_logo_image: tk.PhotoImage | None = None
 
         self._build_layout()
         self._load_state_from_config(self.config)
@@ -54,60 +80,184 @@ class CalibrationDesignerApp:
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
-        top_bar = tk.Frame(self.root, bd=1, relief=tk.RIDGE)
-        top_bar.grid(row=0, column=0, sticky="nsew")
+        self._build_header()
 
-        title = tk.Label(top_bar, text="CalibrationDesignerV3", font=("Segoe UI", 14, "bold"))
-        title.pack(side=tk.LEFT, padx=12, pady=8)
+        self.main_content = tk.Frame(self.root, bg=COLORS["background"])
+        self.main_content.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
+        self.main_content.grid_columnconfigure(0, weight=1)
+        self.main_content.grid_rowconfigure(2, weight=1)
+
+        self._build_input_sections(self.main_content)
+        self._build_manual_secondary_section(self.main_content)
+        self._build_output_panels(self.main_content)
+        self._build_action_bar()
+
+    def _build_header(self) -> None:
+        top_bar = tk.Frame(
+            self.root,
+            bg=COLORS["primary"],
+            highlightbackground=COLORS["accent"],
+            highlightthickness=1,
+            bd=0,
+        )
+        top_bar.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 8))
+        top_bar.grid_columnconfigure(0, weight=1)
+
+        text_block = tk.Frame(top_bar, bg=COLORS["primary"])
+        text_block.grid(row=0, column=0, sticky="w", padx=14, pady=10)
+
+        tk.Label(
+            text_block,
+            text="CalibrationDesignerV3",
+            font=("Segoe UI", 22, "bold"),
+            fg="#FFFFFF",
+            bg=COLORS["primary"],
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            text_block,
+            text="Low-dose NIR reflectance calibration design",
+            fg=COLORS["accent"],
+            bg=COLORS["primary"],
+            font=("Segoe UI", 10),
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
         if logo_path.exists():
             try:
-                photo = tk.PhotoImage(file=str(logo_path))
-                logo_label = tk.Label(top_bar, image=photo)
-                logo_label.image = photo
-                logo_label.pack(side=tk.RIGHT, padx=8, pady=6)
+                self._header_logo_image = tk.PhotoImage(file=str(logo_path))
+                logo_label = tk.Label(top_bar, image=self._header_logo_image, bg=COLORS["primary"])
+                logo_label.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
             except Exception:
                 pass
 
-        body = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
-        body.grid(row=1, column=0, sticky="nsew")
-
-        self.left_panel = tk.Frame(body)
-        self.right_panel = tk.Frame(body)
-        body.add(self.left_panel, minsize=540)
-        body.add(self.right_panel)
-
-        self.left_panel.grid_columnconfigure(0, weight=1)
-        self.right_panel.grid_rowconfigure(0, weight=1)
-        self.right_panel.grid_columnconfigure(0, weight=1)
-
-        self._build_input_sections()
-        self._build_output_panels()
-        self._build_action_bar()
-
-    def _build_input_sections(self) -> None:
+    def _build_input_sections(self, parent: tk.Frame) -> None:
         section_names = [
             "1. Component setup",
             "2. Product strengths",
             "3. API calibration range",
             "4. Excipient variation strategy",
             "5. Batch number and batch size settings",
-            "6. Manual design editing",
         ]
 
-        frames: dict[str, tk.LabelFrame] = {}
+        inputs_card = tk.Frame(
+            parent,
+            bg=COLORS["panel"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+            bd=0,
+        )
+        inputs_card.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        inputs_card.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            inputs_card,
+            text="Inputs",
+            bg=COLORS["panel"],
+            fg=COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+
+        input_canvas = tk.Canvas(
+            inputs_card,
+            bg=COLORS["panel"],
+            height=430,
+            highlightthickness=0,
+            bd=0,
+        )
+        input_canvas.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+        input_x_scroll = tk.Scrollbar(inputs_card, orient=tk.HORIZONTAL, command=input_canvas.xview)
+        input_x_scroll.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
+        input_canvas.configure(xscrollcommand=input_x_scroll.set)
+
+        self.section_columns_frame = tk.Frame(input_canvas, bg=COLORS["panel"])
+        self._section_window = input_canvas.create_window((0, 0), window=self.section_columns_frame, anchor="nw")
+
+        def _on_sections_configure(_event: tk.Event[tk.Widget]) -> None:
+            input_canvas.configure(scrollregion=input_canvas.bbox("all"))
+
+        def _on_canvas_configure(event: tk.Event[tk.Widget]) -> None:
+            min_width = max(event.width, 5 * 300)
+            input_canvas.itemconfigure(self._section_window, width=min_width)
+
+        self.section_columns_frame.bind("<Configure>", _on_sections_configure)
+        input_canvas.bind("<Configure>", _on_canvas_configure)
+
+        frames: dict[str, tk.Frame] = {}
         for i, name in enumerate(section_names):
-            frame = tk.LabelFrame(self.left_panel, text=name, padx=8, pady=6)
-            frame.grid(row=i, column=0, sticky="nsew", padx=8, pady=5)
-            frames[name] = frame
+            section_card = tk.Frame(
+                self.section_columns_frame,
+                bg=COLORS["panel"],
+                highlightbackground=COLORS["border"],
+                highlightthickness=1,
+                bd=0,
+                width=300,
+            )
+            section_card.grid(row=0, column=i, sticky="n", padx=6, pady=6)
+            section_card.grid_rowconfigure(1, weight=1)
+
+            tk.Label(
+                section_card,
+                text=name,
+                bg=COLORS["panel"],
+                fg=COLORS["text"],
+                font=("Segoe UI", 11, "bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+
+            content = tk.Frame(section_card, bg=COLORS["panel"])
+            content.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+            frames[name] = content
 
         self._build_component_section(frames[section_names[0]])
         self._build_strength_section(frames[section_names[1]])
         self._build_api_range_section(frames[section_names[2]])
         self._build_variation_section(frames[section_names[3]])
         self._build_batch_section(frames[section_names[4]])
-        self._build_manual_section(frames[section_names[5]])
+
+    def _build_manual_secondary_section(self, parent: tk.Frame) -> None:
+        advanced_card = tk.Frame(
+            parent,
+            bg=COLORS["secondary_panel"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+            bd=0,
+        )
+        advanced_card.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        advanced_card.grid_columnconfigure(0, weight=1)
+
+        header = tk.Frame(advanced_card, bg=COLORS["secondary_panel"])
+        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 6))
+        header.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            header,
+            text="Advanced: Manual design editing",
+            bg=COLORS["secondary_panel"],
+            fg=COLORS["text"],
+            font=("Segoe UI", 11, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.manual_toggle_btn = tk.Button(
+            header,
+            text="Show",
+            command=self._toggle_manual_section,
+            bg=COLORS["primary"],
+            fg="#FFFFFF",
+            activebackground="#0D2A48",
+            activeforeground="#FFFFFF",
+            relief=tk.FLAT,
+            padx=10,
+        )
+        self.manual_toggle_btn.grid(row=0, column=1, sticky="e")
+
+        self.manual_section_container = tk.Frame(advanced_card, bg=COLORS["panel"])
+        self._build_manual_section(self.manual_section_container)
+
+    def _toggle_manual_section(self) -> None:
+        self._manual_collapsed = not self._manual_collapsed
+        if self._manual_collapsed:
+            self.manual_section_container.grid_forget()
+            self.manual_toggle_btn.configure(text="Show")
+            return
+        self.manual_section_container.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.manual_toggle_btn.configure(text="Hide")
 
     def _build_component_section(self, frame: tk.LabelFrame) -> None:
         controls = tk.Frame(frame)
@@ -305,9 +455,33 @@ class CalibrationDesignerApp:
         self.manual_components_frame = tk.Frame(right)
         self.manual_components_frame.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
-    def _build_output_panels(self) -> None:
-        notebook = ttk.Notebook(self.right_panel)
-        notebook.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+    def _build_output_panels(self, parent: tk.Frame) -> None:
+        output_card = tk.Frame(
+            parent,
+            bg=COLORS["panel"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+            bd=0,
+        )
+        output_card.grid(row=2, column=0, sticky="nsew")
+        output_card.grid_rowconfigure(1, weight=1)
+        output_card.grid_columnconfigure(0, weight=1)
+
+        tk.Label(
+            output_card,
+            text="Outputs",
+            bg=COLORS["panel"],
+            fg=COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
+
+        style = ttk.Style(self.root)
+        style.theme_use(style.theme_use())
+        style.configure("V3.TNotebook", background=COLORS["panel"], borderwidth=0)
+        style.configure("V3.TNotebook.Tab", padding=(10, 6))
+
+        notebook = ttk.Notebook(output_card, style="V3.TNotebook")
+        notebook.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
 
         self.design_tab = tk.Text(notebook, wrap="none")
         self.diagnostics_tab = tk.Text(notebook, wrap="none")
@@ -349,16 +523,56 @@ class CalibrationDesignerApp:
         self._plot_preview_image: tk.PhotoImage | None = None
 
     def _build_action_bar(self) -> None:
-        action_bar = tk.Frame(self.root, bd=1, relief=tk.GROOVE)
-        action_bar.grid(row=2, column=0, sticky="ew")
-
-        tk.Button(action_bar, text="Load example", command=self.load_example).pack(side=tk.LEFT, padx=8, pady=8)
-        tk.Button(action_bar, text="Generate design", command=self.generate_design).pack(side=tk.LEFT, padx=8, pady=8)
-        tk.Button(action_bar, text="Recalculate diagnostics", command=self.recalculate_diagnostics).pack(
-            side=tk.LEFT, padx=8, pady=8
+        action_bar = tk.Frame(
+            self.root,
+            bg=COLORS["panel"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+            bd=0,
         )
-        tk.Button(action_bar, text="Export design run", command=self.export_design).pack(side=tk.LEFT, padx=8, pady=8)
-        tk.Button(action_bar, text="Open output folder", command=self.open_output_folder).pack(side=tk.LEFT, padx=8, pady=8)
+        action_bar.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        action_bar.grid_columnconfigure(10, weight=1)
+
+        def _btn(label: str, cmd: object, *, primary: bool = False, col: int = 0) -> None:
+            tk.Button(
+                action_bar,
+                text=label,
+                command=cmd,
+                bg=COLORS["accent"] if primary else COLORS["primary"],
+                fg=COLORS["text"] if primary else "#FFFFFF",
+                activebackground="#D77A1E" if primary else "#0D2A48",
+                activeforeground=COLORS["text"] if primary else "#FFFFFF",
+                relief=tk.FLAT,
+                padx=10,
+                pady=7,
+                font=("Segoe UI", 10, "bold" if primary else "normal"),
+            ).grid(row=0, column=col, sticky="w", padx=(8 if col == 0 else 6, 0), pady=8)
+
+        _btn("Load example", self.load_example, col=0)
+        _btn("Generate design", self.generate_design, primary=True, col=1)
+        _btn("Recalculate diagnostics", self.recalculate_diagnostics, col=2)
+        _btn("Export design run", self.export_design, col=3)
+        _btn("Open output folder", self.open_output_folder, col=4)
+
+        self.status_pill_var = tk.StringVar(value="Ready")
+        self.status_text_var = tk.StringVar(value="Edit inputs and click Generate design.")
+        self.status_pill = tk.Label(
+            action_bar,
+            textvariable=self.status_pill_var,
+            bg=STATUS_COLORS["info"],
+            fg="#FFFFFF",
+            padx=10,
+            pady=5,
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.status_pill.grid(row=0, column=5, sticky="w", padx=(10, 0))
+        tk.Label(
+            action_bar,
+            textvariable=self.status_text_var,
+            bg=COLORS["panel"],
+            fg=COLORS["secondary_text"],
+            anchor="w",
+        ).grid(row=0, column=10, sticky="ew", padx=12)
 
     def _load_state_from_config(self, config: RunConfig) -> None:
         component_names = [component.name for component in config.components]
@@ -1041,6 +1255,13 @@ class CalibrationDesignerApp:
         widget.insert("1.0", content)
         widget.config(state="disabled")
 
+    def _set_status(self, pill_text: str, detail: str, level: str = "info") -> None:
+        if not hasattr(self, "status_pill"):
+            return
+        self.status_pill_var.set(pill_text)
+        self.status_text_var.set(detail)
+        self.status_pill.configure(bg=STATUS_COLORS.get(level, STATUS_COLORS["info"]))
+
     def _set_plots_tab_message(self, message: str) -> None:
         self.plot_listbox.delete(0, tk.END)
         self._plot_file_paths = []
@@ -1101,6 +1322,7 @@ class CalibrationDesignerApp:
         self._set_text(self.diagnostics_tab, "")
         self._set_plots_tab_message("Generate and export a design run to preview plots here.")
         self._set_text(self.export_tab, "")
+        self._set_status("Ready", "Example loaded. Review inputs and generate design.", "info")
 
     def generate_design(self) -> None:
         try:
@@ -1108,6 +1330,7 @@ class CalibrationDesignerApp:
             self.pipeline_result = run_design_pipeline(self.config)
         except Exception as exc:
             messagebox.showerror("Generate design failed", str(exc))
+            self._set_status("Error", "Generate design failed. Review inputs.", "error")
             return
 
         design_table = []
@@ -1137,16 +1360,22 @@ class CalibrationDesignerApp:
 
         warning_lines = [f"{w.severity}: {w.code} - {w.message}" for w in self.pipeline_result.warnings]
         self._set_text(self.export_tab, "\n".join(warning_lines) if warning_lines else "No warnings.")
+        if warning_lines:
+            self._set_status("Warning", "Design generated with warnings. Review diagnostics.", "warning")
+        else:
+            self._set_status("Success", "Design generated successfully.", "success")
 
     def recalculate_diagnostics(self) -> None:
         if self.pipeline_result is None:
             messagebox.showinfo("Recalculate diagnostics", "Generate a design first.")
+            self._set_status("Info", "Generate a design before recalculating diagnostics.", "info")
             return
 
         try:
             self._sync_config_from_inputs()
         except Exception as exc:
             messagebox.showerror("Recalculate diagnostics failed", str(exc))
+            self._set_status("Error", "Recalculate diagnostics failed due to invalid inputs.", "error")
             return
 
         diagnostics = calculate_diagnostics(batches=self.pipeline_result.design.batches, config=self.config)
@@ -1157,6 +1386,7 @@ class CalibrationDesignerApp:
             warnings=[*self.pipeline_result.design.warnings, *diagnostics.warnings],
         )
         self._set_text(self.diagnostics_tab, self.pipeline_result.diagnostics.summary.to_string(index=False))
+        self._set_status("Success", "Diagnostics recalculated.", "success")
 
     def export_design(self) -> None:
         if self.pipeline_result is None:
@@ -1169,20 +1399,25 @@ class CalibrationDesignerApp:
             self.last_output_folder = export_design_run(config=self.config, pipeline_result=self.pipeline_result)
         except Exception as exc:
             messagebox.showerror("Export failed", str(exc))
+            self._set_status("Error", "Export failed.", "error")
             return
 
         self._refresh_plot_previews_from_output_folder()
         self._set_text(self.export_tab, f"Exported run folder:\n{self.last_output_folder}")
+        self._set_status("Success", f"Exported run: {self.last_output_folder.name}", "success")
 
     def open_output_folder(self) -> None:
         if self.last_output_folder is None:
             messagebox.showinfo("Open output folder", "Export a design run first.")
+            self._set_status("Info", "Export a run before opening output folder.", "info")
             return
 
         try:
             os.startfile(str(self.last_output_folder))  # type: ignore[attr-defined]
+            self._set_status("Success", "Opened output folder.", "success")
         except Exception as exc:
             messagebox.showerror("Open output folder failed", str(exc))
+            self._set_status("Error", "Failed to open output folder.", "error")
 
 
 def create_app_root() -> tuple[tk.Tk, CalibrationDesignerApp]:

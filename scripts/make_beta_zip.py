@@ -13,6 +13,10 @@ INCLUDE_PATHS = [
     "README.md",
     "BETA_INSTALLATION_GUIDE.md",
     "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    "start_calibration_designer_v3.bat",
+    "calibration_designer_v3.py",
     "scripts",
 ]
 
@@ -24,6 +28,7 @@ EXCLUDE_PARTS = {
     "outputs",
     "dist",
     "build",
+    ".tmp_test_runs",
 }
 
 

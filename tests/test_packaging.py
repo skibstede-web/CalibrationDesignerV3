@@ -21,7 +21,16 @@ def test_zip_excludes_unwanted_paths(local_tmp_path: Path) -> None:
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
 
-    excluded_markers = [".venv/", ".git/", "__pycache__/", ".pytest_cache/", "outputs/", "dist/", "build/"]
+    excluded_markers = [
+        ".venv/",
+        ".git/",
+        "__pycache__/",
+        ".pytest_cache/",
+        ".tmp_test_runs/",
+        "outputs/",
+        "dist/",
+        "build/",
+    ]
     for marker in excluded_markers:
         assert not any(marker in name for name in names)
 
@@ -40,3 +49,7 @@ def test_zip_includes_required_paths(local_tmp_path: Path) -> None:
     assert "README.md" in names
     assert "BETA_INSTALLATION_GUIDE.md" in names
     assert "pyproject.toml" in names
+    assert "uv.lock" in names
+    assert ".python-version" in names
+    assert "start_calibration_designer_v3.bat" in names
+    assert "calibration_designer_v3.py" in names

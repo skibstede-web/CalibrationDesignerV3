@@ -6,8 +6,14 @@ import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+PACKAGE = SRC / "calibration_designer_v3"
+src_path = str(SRC)
+if src_path in sys.path:
+    sys.path.remove(src_path)
+sys.path.insert(0, src_path)
+
+if PACKAGE.exists():
+    __path__ = [str(PACKAGE)]  # Makes this launcher safe if imported as a package.
 
 from calibration_designer_v3.app import main
 

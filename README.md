@@ -99,37 +99,53 @@ Fix failures before proceeding.
 Create beta ZIP at the end.
 ```
 
-## Installation after Codex has built the app
+## Launch With uv
+
+CalibrationDesignerV3 is managed with `uv`. Do not launch the app with Anaconda base Python.
+
+Install `uv` if needed:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
 From the project root:
 
 ```powershell
 cd C:\Users\Erik\Documents\Projects\CalibrationDesignerV3
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-python -m pytest
+.\start_calibration_designer_v3.bat
 ```
 
-Launch command will be finalized by Codex during the build. Expected options:
+The launcher runs `uv sync` and then starts the app with `uv run`. It intentionally never calls plain `python` or Anaconda base Python.
+
+Equivalent manual commands:
 
 ```powershell
-python -m calibration_designer_v3
+uv sync
+uv run python calibration_designer_v3.py
 ```
 
-or:
+Run tests:
 
 ```powershell
-python src\calibration_designer_v3\app.py
+uv run python -m pytest
 ```
+
+Run non-GUI smoke checks:
+
+```powershell
+uv run python calibration_designer_v3.py --smoke-test
+uv run python calibration_designer_v3.py --input-smoke-test
+```
+
+Troubleshooting: if errors mention `C:\Users\Erik\anaconda3`, the app was not launched through uv. Use `start_calibration_designer_v3.bat` or `uv run python calibration_designer_v3.py`.
 
 ## Beta packaging
 
 The final build should include:
 
 ```powershell
-python scripts\make_beta_zip.py
+uv run python scripts\make_beta_zip.py
 ```
 
 Expected output:
