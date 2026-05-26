@@ -51,9 +51,10 @@ def test_design_contains_desired_batches_when_enough_candidates() -> None:
 
 
 def test_returns_available_candidates_with_warning_if_fewer_than_desired() -> None:
-    cfg = _base_config(desired_batches=10)
+    cfg = _base_config(desired_batches=30)
     result = select_calibration_design(cfg)
-    assert len(result.batches) == 6
+    assert len(result.batches) < cfg.batch_settings.desired_batches
+    assert len(result.batches) >= cfg.batch_settings.min_batches
     assert any(w.code == "INSUFFICIENT_BATCHES" for w in result.warnings)
 
 
@@ -63,6 +64,7 @@ def test_target_strengths_included_when_toggle_on() -> None:
     api_levels = {b.api_pure_mg_g for b in result.batches}
     assert 10.0 in api_levels
     assert 20.0 in api_levels
+    assert any(b.is_target_strength for b in result.batches)
 
 
 def test_target_strengths_not_forced_when_toggle_off() -> None:

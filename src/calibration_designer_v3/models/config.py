@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from calibration_designer_v3.models.domain import (
+    ApiCalibrationRangeSettings,
     BatchSettings,
     ComponentConstraint,
     ComponentSpec,
+    ExcipientVariationSettings,
     ProductStrength,
     RunConfig,
 )
@@ -13,19 +15,17 @@ from calibration_designer_v3.models.domain import (
 
 def build_example_run_config() -> RunConfig:
     components = [
-        ComponentSpec(name="API", is_api=True),
-        ComponentSpec(name="SNAC"),
-        ComponentSpec(name="Niacinamide"),
-        ComponentSpec(name="Glidant"),
-        ComponentSpec(name="Lactose", is_balance=True),
+        ComponentSpec(name="API", is_api=True, component_type="api"),
+        ComponentSpec(name="SNAC", is_balance=True, component_type="major_excipient"),
+        ComponentSpec(name="Niacinamide", component_type="major_excipient"),
+        ComponentSpec(name="Glidant", component_type="glidant_lubricant"),
     ]
 
     constraints = [
-        ComponentConstraint(component_name="API", min_mg_g=10.0, max_mg_g=60.0, preferred_levels=6),
-        ComponentConstraint(component_name="SNAC", min_mg_g=20.0, max_mg_g=120.0, preferred_levels=5),
-        ComponentConstraint(component_name="Niacinamide", min_mg_g=5.0, max_mg_g=60.0, preferred_levels=4),
-        ComponentConstraint(component_name="Glidant", min_mg_g=2.0, max_mg_g=15.0, preferred_levels=3),
-        ComponentConstraint(component_name="Lactose", min_mg_g=600.0, max_mg_g=980.0, preferred_levels=1),
+        ComponentConstraint(component_name="API", min_mg_g=0.0, max_mg_g=25.0, preferred_levels=5),
+        ComponentConstraint(component_name="SNAC", min_mg_g=450.0, max_mg_g=650.0, preferred_levels=1),
+        ComponentConstraint(component_name="Niacinamide", min_mg_g=300.0, max_mg_g=500.0, preferred_levels=3),
+        ComponentConstraint(component_name="Glidant", min_mg_g=10.0, max_mg_g=25.0, preferred_levels=1),
     ]
 
     strengths = [
@@ -33,27 +33,9 @@ def build_example_run_config() -> RunConfig:
             name="1%",
             component_targets_mg_g={
                 "API": 10.0,
-                "SNAC": 60.0,
-                "Niacinamide": 20.0,
-                "Glidant": 6.0,
-            },
-        ),
-        ProductStrength(
-            name="3%",
-            component_targets_mg_g={
-                "API": 30.0,
-                "SNAC": 70.0,
-                "Niacinamide": 25.0,
-                "Glidant": 8.0,
-            },
-        ),
-        ProductStrength(
-            name="6%",
-            component_targets_mg_g={
-                "API": 60.0,
-                "SNAC": 90.0,
-                "Niacinamide": 30.0,
-                "Glidant": 10.0,
+                "SNAC": 520.5,
+                "Niacinamide": 452.0,
+                "Glidant": 15.0,
             },
         ),
     ]
@@ -74,6 +56,20 @@ def build_example_run_config() -> RunConfig:
         api_content_mg_mg=0.80,
         product_strengths=strengths,
         component_constraints=constraints,
+        api_calibration_range_settings=ApiCalibrationRangeSettings(
+            mode="percent_of_target",
+            lower=60.0,
+            upper=140.0,
+            api_levels=5,
+            include_target_api_level=True,
+            apply_same_api_range_to_all_strengths=True,
+        ),
+        excipient_variation_settings=ExcipientVariationSettings(
+            preset="standard",
+            allow_variation_by_component={"SNAC": True, "Niacinamide": True, "Glidant": False},
+            keep_glidant_lubricant_fixed=True,
+            auto_select_balance_component=True,
+        ),
         batch_settings=batch_settings,
         seed=123,
     )

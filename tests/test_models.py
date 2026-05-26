@@ -85,6 +85,23 @@ def test_missing_balance_rejected() -> None:
         )
 
 
+def test_api_cannot_also_be_balance_component() -> None:
+    components = [
+        ComponentSpec(name="API", is_api=True, is_balance=True),
+        ComponentSpec(name="Exc1"),
+    ]
+    with pytest.raises(ValidationError):
+        RunConfig(
+            components=components,
+            api_content_mg_mg=0.8,
+            product_strengths=[ProductStrength(name="2%", component_targets_mg_g={"API": 20.0, "Exc1": 150.0})],
+            component_constraints=[
+                ComponentConstraint(component_name="API", min_mg_g=10, max_mg_g=20, preferred_levels=3),
+                ComponentConstraint(component_name="Exc1", min_mg_g=100, max_mg_g=200, preferred_levels=3),
+            ],
+        )
+
+
 def test_duplicate_component_names_rejected() -> None:
     components = [
         ComponentSpec(name="API", is_api=True),

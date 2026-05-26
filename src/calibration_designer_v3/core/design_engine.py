@@ -7,7 +7,10 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from calibration_designer_v3.core.candidate_generation import generate_candidate_compositions
+from calibration_designer_v3.core.candidate_generation import (
+    calculate_raw_grid_combinations,
+    generate_candidate_compositions,
+)
 from calibration_designer_v3.core.feasibility import is_feasible_candidate
 from calibration_designer_v3.models.domain import CalibrationBatch, RunConfig, WarningEntry
 
@@ -17,6 +20,8 @@ class DesignSelectionResult:
     batches: list[CalibrationBatch]
     warnings: list[WarningEntry]
     selected_candidates: pd.DataFrame
+    raw_grid_combinations: int
+    feasible_candidate_count: int
 
 
 def _candidate_signature(row: pd.Series) -> tuple[float, ...]:
@@ -32,7 +37,14 @@ def _manual_signature(batch: CalibrationBatch) -> tuple[float, ...]:
     return tuple(values)
 
 
-def _to_batch(row: pd.Series, config: RunConfig, index: int, source: str = "generated") -> CalibrationBatch:
+def _to_batch(
+    row: pd.Series,
+    config: RunConfig,
+    index: int,
+    source: str = "generated",
+    is_target_strength: bool = False,
+    target_strength_name: str | None = None,
+) -> CalibrationBatch:
     api_name = config.api_component_name
     balance_name = config.balance_component_name
 
@@ -49,7 +61,10 @@ def _to_batch(row: pd.Series, config: RunConfig, index: int, source: str = "gene
     return CalibrationBatch(
         batch_id=f"CAL-{index:03d}",
         batch_name=f"Calibration {index:03d}",
+        batch_role="target_strength" if is_target_strength else "calibration",
         source=source,
+        is_target_strength=is_target_strength,
+        target_strength_name=target_strength_name,
         batch_size_kg=float(config.batch_settings.default_batch_size)
         if config.batch_settings.batch_size_unit == "kg"
         else float(config.batch_settings.default_batch_size) / 1000.0,
@@ -128,6 +143,7 @@ def select_calibration_design(
     candidates: pd.DataFrame | None = None,
 ) -> DesignSelectionResult:
     warnings: list[WarningEntry] = []
+    raw_grid_combinations = calculate_raw_grid_combinations(config=config)
 
     if candidates is None:
         candidates = generate_candidate_compositions(config)
@@ -141,10 +157,17 @@ def select_calibration_design(
                 suggested_action="Review component ranges and API content settings.",
             )
         )
-        return DesignSelectionResult(batches=[], warnings=warnings, selected_candidates=pd.DataFrame())
+        return DesignSelectionResult(
+            batches=[],
+            warnings=warnings,
+            selected_candidates=pd.DataFrame(),
+            raw_grid_combinations=raw_grid_combinations,
+            feasible_candidate_count=0,
+        )
 
     selected_rows: list[pd.Series] = []
     selected_signatures: set[tuple[float, ...]] = set()
+    target_signature_to_name: dict[tuple[float, ...], str] = {}
 
     # 1) Include locked/forced manual batches first.
     for manual_batch in config.manual_batches:
@@ -169,6 +192,7 @@ def select_calibration_design(
             if signature not in selected_signatures:
                 selected_rows.append(row)
                 selected_signatures.add(signature)
+                target_signature_to_name[signature] = strength.name
                 used_row_idx.add(nearest_idx)
 
     # 3) Greedy deterministic fill.
@@ -220,6 +244,31 @@ def select_calibration_design(
 
     if not selected_df.empty:
         for _, row in selected_df.iterrows():
-            batches.append(_to_batch(row=row, config=config, index=len(batches) + 1))
+            signature = _candidate_signature(row)
+            batches.append(
+                _to_batch(
+                    row=row,
+                    config=config,
+                    index=len(batches) + 1,
+                    is_target_strength=signature in target_signature_to_name,
+                    target_strength_name=target_signature_to_name.get(signature),
+                )
+            )
 
-    return DesignSelectionResult(batches=batches, warnings=warnings, selected_candidates=selected_df)
+    if len(batches) < config.batch_settings.min_batches:
+        warnings.append(
+            WarningEntry(
+                severity="CRITICAL",
+                code="BELOW_MIN_BATCHES",
+                message="Feasible candidate count is below the minimum requested calibration batches.",
+                suggested_action="Relax constraints, widen ranges, or reduce minimum batch count.",
+            )
+        )
+
+    return DesignSelectionResult(
+        batches=batches,
+        warnings=warnings,
+        selected_candidates=selected_df,
+        raw_grid_combinations=raw_grid_combinations,
+        feasible_candidate_count=len(candidates),
+    )

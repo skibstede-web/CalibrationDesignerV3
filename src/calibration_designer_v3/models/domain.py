@@ -7,10 +7,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+ComponentType = Literal["api", "major_excipient", "minor_excipient", "glidant_lubricant"]
+
+
 class ComponentSpec(BaseModel):
     name: str
     is_api: bool = False
     is_balance: bool = False
+    component_type: ComponentType = "major_excipient"
 
     @field_validator("name")
     @classmethod
@@ -19,6 +23,12 @@ class ComponentSpec(BaseModel):
         if not name:
             raise ValueError("Component name must be non-empty")
         return name
+
+    @model_validator(mode="after")
+    def normalize_component_type(self) -> "ComponentSpec":
+        if self.is_api:
+            self.component_type = "api"
+        return self
 
 
 class ProductStrength(BaseModel):
@@ -87,6 +97,43 @@ class DesignObjectiveSettings(BaseModel):
     minimize_api_material_consumption: bool = False
     prefer_fewer_calibration_batches: bool = False
     allow_non_nominal_excipient_ratios: bool = True
+    use_d_optimal_or_approximate_d_optimal_selection: bool = True
+
+
+class ApiCalibrationRangeSettings(BaseModel):
+    mode: Literal["percent_of_target", "absolute_mg_g"] = "percent_of_target"
+    lower: float = 60.0
+    upper: float = 140.0
+    api_levels: int = 5
+    include_target_api_level: bool = True
+    apply_same_api_range_to_all_strengths: bool = True
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "ApiCalibrationRangeSettings":
+        if self.api_levels < 2:
+            raise ValueError("api_levels must be >= 2")
+        if self.lower > self.upper:
+            raise ValueError("API range lower must be <= upper")
+        return self
+
+
+class ExcipientVariationSettings(BaseModel):
+    preset: Literal["conservative", "standard", "aggressive", "custom"] = "standard"
+    allow_variation_by_component: dict[str, bool] = Field(default_factory=dict)
+    keep_glidant_lubricant_fixed: bool = True
+    auto_select_balance_component: bool = True
+    manual_balance_component_override: str | None = None
+    custom_variation_pct_by_component: dict[str, float] = Field(default_factory=dict)
+
+    def preset_fraction(self) -> float:
+        preset_map = {
+            "conservative": 0.025,
+            "standard": 0.05,
+            "aggressive": 0.10,
+        }
+        if self.preset == "custom":
+            return 0.05
+        return preset_map[self.preset]
 
 
 class BatchSettings(BaseModel):
@@ -134,6 +181,8 @@ class CalibrationBatch(BaseModel):
     fraction_from_a: float | None = None
     assigned_strength_models: list[str] = Field(default_factory=list)
     reusable_across_strengths: bool = True
+    is_target_strength: bool = False
+    target_strength_name: str | None = None
     preparation_route: str = "direct"
     batch_size_kg: float = 1.0
     api_pure_mg_g: float
@@ -159,6 +208,8 @@ class RunConfig(BaseModel):
     product_strengths: list[ProductStrength]
     component_constraints: list[ComponentConstraint]
     objective_settings: DesignObjectiveSettings = Field(default_factory=DesignObjectiveSettings)
+    api_calibration_range_settings: ApiCalibrationRangeSettings = Field(default_factory=ApiCalibrationRangeSettings)
+    excipient_variation_settings: ExcipientVariationSettings = Field(default_factory=ExcipientVariationSettings)
     batch_settings: BatchSettings = Field(default_factory=BatchSettings)
     manual_batches: list[CalibrationBatch] = Field(default_factory=list)
     seed: int = 123
@@ -174,6 +225,8 @@ class RunConfig(BaseModel):
             raise ValueError("Exactly one balance component must be selected")
         if self.api_content_mg_mg <= 0:
             raise ValueError("API content must be > 0")
+        if self.api_component_name == self.balance_component_name:
+            raise ValueError("API component and calculated balance component must be different")
 
         names = [component.name for component in self.components]
         if len(names) != len(set(names)):

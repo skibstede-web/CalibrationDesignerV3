@@ -55,6 +55,8 @@ def test_exported_compositions_sum_to_1000(local_tmp_path: Path) -> None:
     run_folder = export_design_run(cfg, result, output_root=local_tmp_path)
 
     design_table = pd.read_csv(run_folder / "calibration_design_table.csv")
+    assert "is_target_strength" in design_table.columns
+    assert "target_strength_name" in design_table.columns
     assert (design_table["sum_weighed_components_mg_g"].sub(1000.0).abs() <= 1e-6).all()
 
 
@@ -77,3 +79,14 @@ def test_material_consumption_summary_contains_required_api_rows(local_tmp_path:
     assert "API pure equivalent" in summary["component"].values
     assert "API drug substance weighed" in summary["component"].values
     assert "API impurity/material fraction" in summary["component"].values
+
+
+def test_diagnostics_summary_contains_pairwise_metrics(local_tmp_path: Path) -> None:
+    cfg = build_example_run_config()
+    result = run_design_pipeline(cfg)
+    run_folder = export_design_run(cfg, result, output_root=local_tmp_path)
+
+    summary = pd.read_csv(run_folder / "design_diagnostics_summary.csv")
+    metrics = set(summary["metric"].tolist())
+    assert "pairwise_plot_count" in metrics
+    assert "target_strength_points_in_design" in metrics

@@ -12,11 +12,14 @@ from calibration_designer_v3.core.composition import calculate_component_masses
 from calibration_designer_v3.core.pipeline import PipelineResult
 from calibration_designer_v3.models.domain import CalibrationBatch, RunConfig, WarningEntry
 from calibration_designer_v3.plotting.plots import (
+    PAIRWISE_DIRNAME,
     plot_api_range_coverage,
     plot_api_vs_each_excipient,
     plot_batch_reuse_map,
     plot_component_correlation_heatmap,
+    create_pairwise_component_plots,
     plot_material_consumption,
+    annotate_target_strength_columns,
 )
 
 
@@ -49,6 +52,8 @@ def _build_design_table(batches: list[CalibrationBatch]) -> pd.DataFrame:
             "source": batch.source,
             "locked": batch.locked,
             "forced": batch.forced,
+            "is_target_strength": batch.is_target_strength,
+            "target_strength_name": batch.target_strength_name or "",
             "derived_batch": batch.derived_batch,
             "parent_batch_a": batch.parent_batch_a,
             "parent_batch_b": batch.parent_batch_b,
@@ -180,6 +185,11 @@ def export_design_run(
     run_folder = _make_run_folder(Path(output_root), timestamp=timestamp)
 
     design_table = _build_design_table(pipeline_result.design.batches)
+    design_table = annotate_target_strength_columns(
+        design_table=design_table,
+        config=config,
+        tolerance_mg_g=max(config.tolerance_mg_g, 0.001),
+    )
     weighing_sheet = _build_weighing_sheet(
         batches=pipeline_result.design.batches,
         api_component_name=config.api_component_name,
@@ -193,6 +203,33 @@ def export_design_run(
         weighing_sheet=weighing_sheet,
         api_component_name=config.api_component_name,
     )
+
+    pairwise_dir = run_folder / "plots" / PAIRWISE_DIRNAME
+    pairwise_manifest = create_pairwise_component_plots(
+        config=config,
+        design_table=design_table,
+        output_root=pairwise_dir,
+        tolerance_mg_g=max(config.tolerance_mg_g, 0.001),
+    )
+    pairwise_metrics = pd.DataFrame(
+        [
+            {
+                "metric": "pairwise_plot_count",
+                "value": float(len(pairwise_manifest)),
+                "threshold": "n*(n-1)/2",
+                "status": "INFO",
+                "interpretation": "Number of pairwise component scatter plots generated.",
+            },
+            {
+                "metric": "target_strength_points_in_design",
+                "value": float(int(design_table["is_target_strength"].astype(bool).sum())),
+                "threshold": "informative",
+                "status": "INFO",
+                "interpretation": "Number of target-strength batches in the exported design table.",
+            },
+        ]
+    )
+    diagnostics_summary = pd.concat([diagnostics_summary, pairwise_metrics], ignore_index=True)
 
     design_table.to_csv(run_folder / "calibration_design_table.csv", index=False)
     weighing_sheet.to_csv(run_folder / "batch_weighing_sheet.csv", index=False)

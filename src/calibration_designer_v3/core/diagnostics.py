@@ -185,19 +185,26 @@ def calculate_diagnostics(batches: list[CalibrationBatch], config: RunConfig) ->
         },
     ]
 
-    # Optional named diagnostics when names are present.
+    # Optional named diagnostics when those components are present, including
+    # cases where they are selected as the calculated balance component.
     for special in ("SNAC", "Niacinamide"):
-        match_col = next((c for c in excipient_cols if c.lower() == f"{special.lower()}_mg_g"), None)
-        if match_col and not pd.isna(df["api_pure_mg_g"].corr(df[match_col])):
-            summary_rows.append(
-                {
-                    "metric": f"api_vs_{special.lower()}_correlation",
-                    "value": float(df["api_pure_mg_g"].corr(df[match_col])),
-                    "threshold": "informative",
-                    "status": "INFO",
-                    "interpretation": f"API correlation with {special}.",
-                }
-            )
+        special_col = f"{special}_mg_g"
+        if special_col not in df.columns:
+            continue
+        if df["api_pure_mg_g"].nunique() <= 1 or df[special_col].nunique() <= 1:
+            continue
+        corr = float(df["api_pure_mg_g"].corr(df[special_col]))
+        if pd.isna(corr):
+            continue
+        summary_rows.append(
+            {
+                "metric": f"api_vs_{special.lower()}_correlation",
+                "value": corr,
+                "threshold": "<= 0.80 recommended",
+                "status": _severity_for_correlation(abs(corr)),
+                "interpretation": f"API correlation with {special}.",
+            }
+        )
 
     return DiagnosticsResult(
         correlation_matrix=correlation_matrix,
