@@ -240,10 +240,15 @@ def export_design_run(
     warnings_df.to_csv(run_folder / "warnings.csv", index=False)
 
     plot_api_range_coverage(design_table=design_table, output_path=run_folder / "api_range_coverage.png")
-    plot_api_vs_each_excipient(design_table=design_table, output_path=run_folder / "api_vs_each_excipient.png")
+    plot_api_vs_each_excipient(
+        design_table=design_table,
+        output_path=run_folder / "api_vs_each_excipient.png",
+        config=config,
+    )
     plot_component_correlation_heatmap(
         correlation_matrix=correlation_matrix,
         output_path=run_folder / "component_correlation_heatmap.png",
+        config=config,
     )
     plot_material_consumption(material_consumption=material_summary, output_path=run_folder / "material_consumption.png")
     plot_batch_reuse_map(assignments=assignments, output_path=run_folder / "batch_reuse_map.png")

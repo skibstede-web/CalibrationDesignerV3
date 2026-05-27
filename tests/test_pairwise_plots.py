@@ -18,8 +18,11 @@ from calibration_designer_v3.models.domain import (
 from calibration_designer_v3.plotting.plots import (
     PAIRWISE_MANIFEST_FILENAME,
     annotate_target_strength_columns,
+    build_component_correlation_plot_matrix,
+    build_component_label_map,
     build_pairwise_plot_variables,
     create_pairwise_component_plots,
+    plot_component_correlation_heatmap,
 )
 
 
@@ -114,11 +117,72 @@ def test_pairwise_variable_selection_includes_api_and_non_api_excludes_api_ds() 
     names = [name for name, _ in variables]
     cols = [col for _, col in variables]
 
-    assert "API_pure" in names
+    assert "API" in names
     assert "SNAC" in names
     assert "Niacinamide" in names
     assert "Glidant" in names
     assert "api_ds_total_mg_g" not in cols
+
+
+def test_component_plot_labels_use_user_defined_component_names() -> None:
+    cfg = _config_with_components(["Semaglutide", "SNAC", "Niacinamide", "Magnesium stearate"])
+
+    label_map = build_component_label_map(cfg)
+
+    assert label_map["api_pure_mg_g"] == "Semaglutide"
+    assert label_map["SNAC_mg_g"] == "SNAC"
+    assert label_map["niacinamide_mg_g"] == "Niacinamide"
+    assert label_map["Magnesium stearate_mg_g"] == "Magnesium stearate"
+    assert "api_pure_mg_g" not in label_map.values()
+    assert "api_ds_total_mg_g" not in label_map.values()
+
+
+def test_correlation_plot_matrix_uses_user_names_and_excludes_internal_duplicates() -> None:
+    cfg = _config_with_components(["Semaglutide", "SNAC", "Niacinamide", "Magnesium stearate"])
+    internal_columns = [
+        "api_pure_mg_g",
+        "api_ds_total_mg_g",
+        "SNAC_mg_g",
+        "niacinamide_mg_g",
+        "Magnesium stearate_mg_g",
+        "balance_mg_g",
+    ]
+    values = pd.DataFrame(1.0, index=internal_columns, columns=internal_columns)
+
+    plot_matrix = build_component_correlation_plot_matrix(values, cfg)
+    labels = list(plot_matrix.columns)
+
+    assert labels == ["Semaglutide", "SNAC", "Niacinamide", "Magnesium stearate"]
+    assert "api_pure_mg_g" not in labels
+    assert "api_ds_total_mg_g" not in labels
+    assert "balance_mg_g" not in labels
+    assert "niacinamide_mg_g" not in labels
+
+
+def test_heatmap_plot_file_created_with_user_label_mapping(local_tmp_path: Path) -> None:
+    cfg = _config_with_components(["Semaglutide", "SNAC", "Niacinamide", "Magnesium stearate"])
+    internal_columns = [
+        "api_pure_mg_g",
+        "SNAC_mg_g",
+        "Niacinamide_mg_g",
+        "Magnesium stearate_mg_g",
+    ]
+    values = pd.DataFrame(
+        [
+            [1.0, 0.2, -0.1, 0.0],
+            [0.2, 1.0, 0.3, -0.2],
+            [-0.1, 0.3, 1.0, 0.1],
+            [0.0, -0.2, 0.1, 1.0],
+        ],
+        index=internal_columns,
+        columns=internal_columns,
+    )
+    output_path = local_tmp_path / "component_correlation_heatmap.png"
+
+    plot_component_correlation_heatmap(values, output_path, config=cfg)
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
 
 
 def test_pairwise_combination_count_for_4_variables_is_6() -> None:

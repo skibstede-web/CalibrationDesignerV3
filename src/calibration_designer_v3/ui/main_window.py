@@ -61,6 +61,17 @@ STATUS_COLORS = {
 
 DEFAULT_TK_FONT = "{Segoe UI} 10"
 HEADER_LOGO_MAX_HEIGHT = 48
+MIN_INPUT_SECTION_CARD_WIDTH = 320
+INPUT_PANE_MIN_HEIGHT = 280
+OUTPUT_PANE_MIN_HEIGHT = 220
+DEFAULT_INPUT_SPLIT_FRACTION = 0.52
+INPUT_SECTION_TITLE_FONT = ("Segoe UI", 12, "bold")
+INPUT_SECTION_HEADER_FONT = ("Segoe UI", 13, "bold")
+INPUT_TABLE_HEADER_FONT = ("Segoe UI", 10, "bold")
+INPUT_LABEL_FONT_TCL = "{Segoe UI} 11"
+INPUT_ENTRY_FONT_TCL = "{Segoe UI} 11"
+INPUT_CHECKBUTTON_FONT_TCL = "{Segoe UI} 11"
+INPUT_BUTTON_FONT_TCL = "{Segoe UI} 10"
 
 
 def _load_header_logo_tk_image(logo_path: Path, height_px: int = HEADER_LOGO_MAX_HEIGHT) -> object | None:
@@ -94,14 +105,22 @@ class CalibrationDesignerApp:
         self.root.minsize(1200, 760)
         self.root.configure(bg=COLORS["background"])
         self.root.option_add("*Font", DEFAULT_TK_FONT)
+        self.root.option_add("*Label.Font", INPUT_LABEL_FONT_TCL)
+        self.root.option_add("*Entry.Font", INPUT_ENTRY_FONT_TCL)
+        self.root.option_add("*Checkbutton.Font", INPUT_CHECKBUTTON_FONT_TCL)
+        self.root.option_add("*Radiobutton.Font", INPUT_CHECKBUTTON_FONT_TCL)
+        self.root.option_add("*Button.Font", INPUT_BUTTON_FONT_TCL)
 
         self.config: RunConfig = build_example_run_config()
         self.pipeline_result: PipelineResult | None = None
         self.last_output_folder: Path | None = None
 
         self.manual_rows: list[ManualBatchInputRow] = []
+        self.manual_component_vars: list[tk.StringVar] = []
         self._manual_collapsed = True
         self._header_logo_image: object | None = None
+        self.input_section_vertical_scrollbars: list[tk.Scrollbar] = []
+        self.input_section_cards: list[tk.Frame] = []
 
         self._build_layout()
         self._load_state_from_config(self.config)
@@ -112,15 +131,41 @@ class CalibrationDesignerApp:
 
         self._build_header()
 
-        self.main_content = tk.Frame(self.root, bg=COLORS["background"])
-        self.main_content.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
-        self.main_content.grid_columnconfigure(0, weight=1)
-        self.main_content.grid_rowconfigure(2, weight=1)
+        self.main_split_pane = tk.PanedWindow(
+            self.root,
+            orient=tk.VERTICAL,
+            bg=COLORS["border"],
+            sashwidth=8,
+            sashrelief=tk.RAISED,
+            bd=0,
+            showhandle=True,
+        )
+        self.main_split_pane.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 8))
 
-        self._build_input_sections(self.main_content)
-        self._build_manual_secondary_section(self.main_content)
-        self._build_output_panels(self.main_content)
+        self.input_pane = tk.Frame(self.main_split_pane, bg=COLORS["background"])
+        self.input_pane.grid_rowconfigure(0, weight=1)
+        self.input_pane.grid_columnconfigure(0, weight=1)
+        self.output_pane = tk.Frame(self.main_split_pane, bg=COLORS["background"])
+        self.output_pane.grid_rowconfigure(0, weight=1)
+        self.output_pane.grid_columnconfigure(0, weight=1)
+
+        self.main_split_pane.add(self.input_pane, minsize=INPUT_PANE_MIN_HEIGHT)
+        self.main_split_pane.add(self.output_pane, minsize=OUTPUT_PANE_MIN_HEIGHT)
+
+        self._build_input_sections(self.input_pane)
+        self._build_output_panels(self.output_pane)
         self._build_action_bar()
+        self.root.after_idle(self._set_default_main_split)
+
+    def _set_default_main_split(self) -> None:
+        self.root.update_idletasks()
+        pane_height = self.main_split_pane.winfo_height()
+        if pane_height <= 1:
+            return
+        desired = int(pane_height * DEFAULT_INPUT_SPLIT_FRACTION)
+        max_input_height = max(INPUT_PANE_MIN_HEIGHT, pane_height - OUTPUT_PANE_MIN_HEIGHT)
+        desired = max(INPUT_PANE_MIN_HEIGHT, min(desired, max_input_height))
+        self.main_split_pane.sash_place(0, 0, desired)
 
     def _build_header(self) -> None:
         top_bar = tk.Frame(
@@ -159,12 +204,15 @@ class CalibrationDesignerApp:
 
     def _build_input_sections(self, parent: tk.Frame) -> None:
         section_names = [
-            "1. Component setup",
-            "2. Product strengths",
-            "3. API calibration range",
-            "4. Excipient variation strategy",
-            "5. Batch number and batch size settings",
+            "Component setup",
+            "Product strengths",
+            "API calibration range",
+            "Excipient variation strategy",
+            "Batch number and batch size settings",
         ]
+        self.input_section_titles = section_names
+        self.input_section_vertical_scrollbars = []
+        self.input_section_cards = []
 
         inputs_card = tk.Frame(
             parent,
@@ -173,65 +221,69 @@ class CalibrationDesignerApp:
             highlightthickness=1,
             bd=0,
         )
-        inputs_card.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        inputs_card.grid(row=0, column=0, sticky="nsew", pady=(0, 0))
+        inputs_card.grid_rowconfigure(1, weight=1)
         inputs_card.grid_columnconfigure(0, weight=1)
         tk.Label(
             inputs_card,
             text="Inputs",
             bg=COLORS["panel"],
             fg=COLORS["text"],
-            font=("Segoe UI", 12, "bold"),
+            font=INPUT_SECTION_HEADER_FONT,
         ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
 
         input_canvas = tk.Canvas(
             inputs_card,
             bg=COLORS["panel"],
-            height=430,
             highlightthickness=0,
             bd=0,
         )
-        input_canvas.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+        input_canvas.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 6))
         input_x_scroll = tk.Scrollbar(inputs_card, orient=tk.HORIZONTAL, command=input_canvas.xview)
         input_x_scroll.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
         input_canvas.configure(xscrollcommand=input_x_scroll.set)
 
         self.section_columns_frame = tk.Frame(input_canvas, bg=COLORS["panel"])
         self._section_window = input_canvas.create_window((0, 0), window=self.section_columns_frame, anchor="nw")
+        self.section_columns_frame.grid_rowconfigure(0, weight=1)
 
         def _on_sections_configure(_event: tk.Event[tk.Widget]) -> None:
             input_canvas.configure(scrollregion=input_canvas.bbox("all"))
 
         def _on_canvas_configure(event: tk.Event[tk.Widget]) -> None:
-            min_width = max(event.width, 5 * 300)
-            input_canvas.itemconfigure(self._section_window, width=min_width)
+            min_width = len(section_names) * MIN_INPUT_SECTION_CARD_WIDTH
+            frame_width = max(event.width, min_width)
+            frame_height = max(1, event.height)
+            input_canvas.itemconfigure(self._section_window, width=frame_width, height=frame_height)
 
         self.section_columns_frame.bind("<Configure>", _on_sections_configure)
         input_canvas.bind("<Configure>", _on_canvas_configure)
 
         frames: dict[str, tk.Frame] = {}
         for i, name in enumerate(section_names):
+            self.section_columns_frame.grid_columnconfigure(i, weight=1, minsize=MIN_INPUT_SECTION_CARD_WIDTH)
             section_card = tk.Frame(
                 self.section_columns_frame,
                 bg=COLORS["panel"],
                 highlightbackground=COLORS["border"],
                 highlightthickness=1,
                 bd=0,
-                width=300,
             )
-            section_card.grid(row=0, column=i, sticky="n", padx=6, pady=6)
+            section_card.grid(row=0, column=i, sticky="nsew", padx=6, pady=6)
+            section_card.grid_columnconfigure(0, weight=1)
             section_card.grid_rowconfigure(1, weight=1)
+            self.input_section_cards.append(section_card)
 
             tk.Label(
                 section_card,
                 text=name,
                 bg=COLORS["panel"],
                 fg=COLORS["text"],
-                font=("Segoe UI", 11, "bold"),
+                font=INPUT_SECTION_TITLE_FONT,
                 anchor="w",
             ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
 
-            content = tk.Frame(section_card, bg=COLORS["panel"])
-            content.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+            content = self._build_scrollable_input_content(section_card)
             frames[name] = content
 
         self._build_component_section(frames[section_names[0]])
@@ -239,6 +291,51 @@ class CalibrationDesignerApp:
         self._build_api_range_section(frames[section_names[2]])
         self._build_variation_section(frames[section_names[3]])
         self._build_batch_section(frames[section_names[4]])
+
+    def _build_scrollable_input_content(self, parent: tk.Frame) -> tk.Frame:
+        viewport = tk.Frame(parent, bg=COLORS["panel"])
+        viewport.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        viewport.grid_rowconfigure(0, weight=1)
+        viewport.grid_columnconfigure(0, weight=1)
+
+        canvas = tk.Canvas(
+            viewport,
+            bg=COLORS["panel"],
+            highlightthickness=0,
+            bd=0,
+        )
+        y_scroll = tk.Scrollbar(viewport, orient=tk.VERTICAL, command=canvas.yview)
+        x_scroll = tk.Scrollbar(viewport, orient=tk.HORIZONTAL, command=canvas.xview)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        canvas.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self.input_section_vertical_scrollbars.append(y_scroll)
+
+        content = tk.Frame(canvas, bg=COLORS["panel"])
+        canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def _refresh_scroll_region(_event: tk.Event[tk.Widget]) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _keep_content_at_least_viewport_width(event: tk.Event[tk.Widget]) -> None:
+            requested_width = max(content.winfo_reqwidth(), event.width)
+            canvas.itemconfigure(canvas_window, width=requested_width)
+
+        def _bind_mousewheel(_event: tk.Event[tk.Widget]) -> None:
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _unbind_mousewheel(_event: tk.Event[tk.Widget]) -> None:
+            canvas.unbind_all("<MouseWheel>")
+
+        def _on_mousewheel(event: tk.Event[tk.Widget]) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        content.bind("<Configure>", _refresh_scroll_region)
+        canvas.bind("<Configure>", _keep_content_at_least_viewport_width)
+        canvas.bind("<Enter>", _bind_mousewheel)
+        canvas.bind("<Leave>", _unbind_mousewheel)
+        return content
 
     def _build_manual_secondary_section(self, parent: tk.Frame) -> None:
         advanced_card = tk.Frame(
@@ -490,7 +587,7 @@ class CalibrationDesignerApp:
             highlightthickness=1,
             bd=0,
         )
-        output_card.grid(row=2, column=0, sticky="nsew")
+        output_card.grid(row=0, column=0, sticky="nsew")
         output_card.grid_rowconfigure(1, weight=1)
         output_card.grid_columnconfigure(0, weight=1)
 
@@ -499,7 +596,7 @@ class CalibrationDesignerApp:
             text="Outputs",
             bg=COLORS["panel"],
             fg=COLORS["text"],
-            font=("Segoe UI", 12, "bold"),
+            font=INPUT_SECTION_HEADER_FONT,
         ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 4))
 
         style = ttk.Style(self.root)
@@ -772,7 +869,7 @@ class CalibrationDesignerApp:
 
         headers = ["#", "Name", "Type", "API", "Balance"]
         for j, text in enumerate(headers):
-            tk.Label(self.component_rows_frame, text=text, font=("Segoe UI", 9, "bold")).grid(
+            tk.Label(self.component_rows_frame, text=text, font=INPUT_TABLE_HEADER_FONT).grid(
                 row=0, column=j, sticky="w", padx=2
             )
 
@@ -806,19 +903,19 @@ class CalibrationDesignerApp:
             widget.destroy()
 
         component_names = [var.get().strip() or f"Component{i + 1}" for i, var in enumerate(self.component_name_vars)]
-        tk.Label(self.strength_rows_frame, text="Strength", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", padx=2)
+        tk.Label(self.strength_rows_frame, text="Strength", font=INPUT_TABLE_HEADER_FONT).grid(row=0, column=0, sticky="w", padx=2)
         for i, component_name in enumerate(component_names):
-            tk.Label(self.strength_rows_frame, text=component_name, font=("Segoe UI", 9, "bold")).grid(
+            tk.Label(self.strength_rows_frame, text=component_name, font=INPUT_TABLE_HEADER_FONT).grid(
                 row=0, column=i + 1, sticky="w", padx=2
             )
         metrics_col = len(component_names) + 1
-        tk.Label(self.strength_rows_frame, text="API DS mg/g", font=("Segoe UI", 9, "bold")).grid(
+        tk.Label(self.strength_rows_frame, text="API DS mg/g", font=INPUT_TABLE_HEADER_FONT).grid(
             row=0, column=metrics_col, sticky="w", padx=6
         )
-        tk.Label(self.strength_rows_frame, text="Weighed total mg/g", font=("Segoe UI", 9, "bold")).grid(
+        tk.Label(self.strength_rows_frame, text="Weighed total mg/g", font=INPUT_TABLE_HEADER_FONT).grid(
             row=0, column=metrics_col + 1, sticky="w", padx=6
         )
-        tk.Label(self.strength_rows_frame, text="Status", font=("Segoe UI", 9, "bold")).grid(
+        tk.Label(self.strength_rows_frame, text="Status", font=INPUT_TABLE_HEADER_FONT).grid(
             row=0, column=metrics_col + 2, sticky="w", padx=6
         )
 
@@ -1045,11 +1142,15 @@ class CalibrationDesignerApp:
             return
 
     def _render_manual_components_inputs(self) -> None:
+        names = self._non_api_non_balance_names()
+        if not hasattr(self, "manual_components_frame"):
+            self.manual_component_vars = [tk.StringVar(value="0") for _name in names]
+            return
+
         for widget in self.manual_components_frame.winfo_children():
             widget.destroy()
 
         self.manual_component_vars = []
-        names = self._non_api_non_balance_names()
         for i, name in enumerate(names):
             tk.Label(self.manual_components_frame, text=f"{name} mg/g").grid(row=i, column=0, sticky="w")
             var = tk.StringVar(value="0")
@@ -1063,6 +1164,9 @@ class CalibrationDesignerApp:
         return [name for i, name in enumerate(names) if i not in {api_idx, balance_idx}]
 
     def _refresh_manual_listbox(self) -> None:
+        if not hasattr(self, "manual_listbox"):
+            return
+
         self.manual_listbox.delete(0, tk.END)
         for row in self.manual_rows:
             tags = []

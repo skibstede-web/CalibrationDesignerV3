@@ -27,14 +27,74 @@ def _sanitize_plot_token(value: str) -> str:
     return cleaned or "var"
 
 
+def _normalized_component_column(component_name: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9]+", "_", component_name.strip().lower())
+    token = re.sub(r"_+", "_", token).strip("_")
+    return f"{token}_mg_g"
+
+
+def build_component_label_map(config: RunConfig) -> dict[str, str]:
+    """Map internal concentration columns to user-facing component names."""
+    api_label = config.api_component_name
+    label_map = {
+        "api_pure_mg_g": api_label,
+        "API_pure": api_label,
+        "api_pure": api_label,
+        "balance_mg_g": config.balance_component_name,
+    }
+
+    for component in config.components:
+        if component.is_api:
+            continue
+        label_map[f"{component.name}_mg_g"] = component.name
+        label_map[_normalized_component_column(component.name)] = component.name
+
+    return label_map
+
+
+def build_component_correlation_plot_matrix(
+    correlation_matrix: pd.DataFrame,
+    config: RunConfig,
+) -> pd.DataFrame:
+    """Return a correlation matrix labelled with user component names for plotting."""
+    if correlation_matrix.empty:
+        return correlation_matrix.copy()
+
+    label_map = build_component_label_map(config)
+    selected_columns: list[str] = []
+    available = set(correlation_matrix.columns).intersection(set(correlation_matrix.index))
+
+    for component in config.components:
+        if component.is_api:
+            candidates = ["api_pure_mg_g", "API_pure", "api_pure"]
+        else:
+            candidates = [f"{component.name}_mg_g", _normalized_component_column(component.name)]
+            if component.is_balance:
+                candidates.append("balance_mg_g")
+
+        selected = next((candidate for candidate in candidates if candidate in available), None)
+        if selected and selected not in selected_columns:
+            selected_columns.append(selected)
+
+    if not selected_columns:
+        return pd.DataFrame()
+
+    plot_matrix = correlation_matrix.loc[selected_columns, selected_columns].copy()
+    labels = [label_map[column] for column in selected_columns]
+    plot_matrix.index = labels
+    plot_matrix.columns = labels
+    return plot_matrix
+
+
 def build_pairwise_plot_variables(config: RunConfig, design_table: pd.DataFrame) -> list[tuple[str, str]]:
-    variables: list[tuple[str, str]] = [("API_pure", "api_pure_mg_g")]
+    label_map = build_component_label_map(config)
+    variables: list[tuple[str, str]] = [(label_map["api_pure_mg_g"], "api_pure_mg_g")]
     for component in config.components:
         if component.is_api:
             continue
         col = f"{component.name}_mg_g"
         if col in design_table.columns:
-            variables.append((component.name, col))
+            variables.append((label_map.get(col, component.name), col))
     return variables
 
 
@@ -184,16 +244,23 @@ def plot_api_range_coverage(design_table: pd.DataFrame, output_path: Path) -> No
     plt.close(fig)
 
 
-def plot_api_vs_each_excipient(design_table: pd.DataFrame, output_path: Path) -> None:
+def plot_api_vs_each_excipient(
+    design_table: pd.DataFrame,
+    output_path: Path,
+    config: RunConfig | None = None,
+) -> None:
     excipient_cols = [
         col for col in design_table.columns if col.endswith("_mg_g") and col not in {"api_pure_mg_g", "api_ds_total_mg_g", "api_impurity_mg_g", "balance_mg_g", "sum_weighed_components_mg_g"}
     ]
 
+    label_map = build_component_label_map(config) if config is not None else {}
+    api_label = label_map.get("api_pure_mg_g", "API pure")
+
     fig, ax = plt.subplots(figsize=(7.5, 4.5))
     for col in excipient_cols:
-        ax.scatter(design_table["api_pure_mg_g"], design_table[col], label=col, alpha=0.85)
+        ax.scatter(design_table["api_pure_mg_g"], design_table[col], label=label_map.get(col, col), alpha=0.85)
     ax.set_title("API vs Each Excipient")
-    ax.set_xlabel("API pure (mg/g)")
+    ax.set_xlabel(f"{api_label} (pure API, mg/g)")
     ax.set_ylabel("Excipient concentration (mg/g)")
     if excipient_cols:
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0)
@@ -202,17 +269,27 @@ def plot_api_vs_each_excipient(design_table: pd.DataFrame, output_path: Path) ->
     plt.close(fig)
 
 
-def plot_component_correlation_heatmap(correlation_matrix: pd.DataFrame, output_path: Path) -> None:
+def plot_component_correlation_heatmap(
+    correlation_matrix: pd.DataFrame,
+    output_path: Path,
+    config: RunConfig | None = None,
+) -> None:
+    plot_matrix = (
+        build_component_correlation_plot_matrix(correlation_matrix, config)
+        if config is not None
+        else correlation_matrix
+    )
+
     fig, ax = plt.subplots(figsize=(6, 5))
-    if correlation_matrix.empty:
+    if plot_matrix.empty:
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.set_axis_off()
     else:
-        cax = ax.imshow(correlation_matrix.values, cmap="coolwarm", vmin=-1, vmax=1)
-        ax.set_xticks(range(len(correlation_matrix.columns)))
-        ax.set_yticks(range(len(correlation_matrix.index)))
-        ax.set_xticklabels(correlation_matrix.columns, rotation=45, ha="right")
-        ax.set_yticklabels(correlation_matrix.index)
+        cax = ax.imshow(plot_matrix.values, cmap="coolwarm", vmin=-1, vmax=1)
+        ax.set_xticks(range(len(plot_matrix.columns)))
+        ax.set_yticks(range(len(plot_matrix.index)))
+        ax.set_xticklabels(plot_matrix.columns, rotation=45, ha="right")
+        ax.set_yticklabels(plot_matrix.index)
         fig.colorbar(cax, ax=ax, fraction=0.046, pad=0.04)
     ax.set_title("Component Correlation Heatmap")
     fig.tight_layout()
