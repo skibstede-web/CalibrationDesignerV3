@@ -12,3 +12,10 @@ outputs/
 *.log
 .DS_Store
 Thumbs.db
+
+.codex/
+tmp_test_runs/
+outputs/
+dist/
+.venv/
+
