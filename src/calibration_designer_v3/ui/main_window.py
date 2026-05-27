@@ -7,6 +7,12 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+try:
+    from PIL import Image, ImageTk
+except ImportError:  # pragma: no cover - defensive runtime fallback.
+    Image = None  # type: ignore[assignment]
+    ImageTk = None  # type: ignore[assignment]
+
 from calibration_designer_v3.core.diagnostics import calculate_diagnostics
 from calibration_designer_v3.core.guided_workflow import auto_select_balance_component, default_allow_variation_map
 from calibration_designer_v3.core.pipeline import PipelineResult, run_design_pipeline
@@ -54,6 +60,30 @@ STATUS_COLORS = {
 }
 
 DEFAULT_TK_FONT = "{Segoe UI} 10"
+HEADER_LOGO_MAX_HEIGHT = 48
+
+
+def _load_header_logo_tk_image(logo_path: Path, height_px: int = HEADER_LOGO_MAX_HEIGHT) -> object | None:
+    """Load a display-resized header logo while preserving the source image file."""
+    if Image is None or ImageTk is None or not logo_path.exists():
+        return None
+
+    try:
+        with Image.open(logo_path) as loaded:
+            logo = loaded.convert("RGBA")
+
+        source_width, source_height = logo.size
+        if source_width <= 0 or source_height <= 0:
+            return None
+
+        target_height = max(40, min(56, int(height_px)))
+        target_width = max(1, int(round(target_height * (source_width / source_height))))
+        resampling_module = getattr(Image, "Resampling", Image)
+        resampling_filter = getattr(resampling_module, "LANCZOS")
+        resized_logo = logo.resize((target_width, target_height), resampling_filter)
+        return ImageTk.PhotoImage(resized_logo)
+    except Exception:
+        return None
 
 
 class CalibrationDesignerApp:
@@ -71,7 +101,7 @@ class CalibrationDesignerApp:
 
         self.manual_rows: list[ManualBatchInputRow] = []
         self._manual_collapsed = True
-        self._header_logo_image: tk.PhotoImage | None = None
+        self._header_logo_image: object | None = None
 
         self._build_layout()
         self._load_state_from_config(self.config)
@@ -122,13 +152,10 @@ class CalibrationDesignerApp:
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
-        if logo_path.exists():
-            try:
-                self._header_logo_image = tk.PhotoImage(file=str(logo_path))
-                logo_label = tk.Label(top_bar, image=self._header_logo_image, bg=COLORS["primary"])
-                logo_label.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
-            except Exception:
-                pass
+        self._header_logo_image = _load_header_logo_tk_image(logo_path)
+        if self._header_logo_image is not None:
+            logo_label = tk.Label(top_bar, image=self._header_logo_image, bg=COLORS["primary"])
+            logo_label.grid(row=0, column=1, sticky="e", padx=(10, 14), pady=8)
 
     def _build_input_sections(self, parent: tk.Frame) -> None:
         section_names = [

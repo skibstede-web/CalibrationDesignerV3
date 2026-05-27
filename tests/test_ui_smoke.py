@@ -42,6 +42,17 @@ def test_missing_logo_does_not_crash() -> None:
         root.destroy()
 
 
+def test_header_logo_is_display_resized_when_available() -> None:
+    root, app = create_app_root_or_skip()
+
+    try:
+        if app._header_logo_image is None:
+            pytest.skip("Header logo not available")
+        assert app._header_logo_image.height() <= main_window.HEADER_LOGO_MAX_HEIGHT
+    finally:
+        root.destroy()
+
+
 def test_example_input_generates_design_through_backend() -> None:
     cfg = build_example_run_config()
     result = run_design_pipeline(cfg)
