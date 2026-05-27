@@ -3,12 +3,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 from calibration_designer_v3.core.pipeline import run_design_pipeline
 from calibration_designer_v3.io.export import export_design_run
 from calibration_designer_v3.models.config import build_example_run_config
 from calibration_designer_v3.models.domain import (
+    ApiCalibrationRangeSettings,
     BatchSettings,
     ComponentConstraint,
     ComponentSpec,
@@ -18,11 +22,17 @@ from calibration_designer_v3.models.domain import (
 from calibration_designer_v3.plotting.plots import (
     PAIRWISE_MANIFEST_FILENAME,
     annotate_target_strength_columns,
+    api_value_to_y_position,
+    build_api_calibration_range_whiskers,
+    build_batch_reuse_map_plot_data,
     build_component_correlation_plot_matrix,
     build_component_label_map,
+    build_material_consumption_plot_data,
     build_pairwise_plot_variables,
     create_pairwise_component_plots,
+    plot_batch_reuse_map,
     plot_component_correlation_heatmap,
+    plot_material_consumption,
 )
 
 
@@ -185,6 +195,66 @@ def test_heatmap_plot_file_created_with_user_label_mapping(local_tmp_path: Path)
     assert output_path.stat().st_size > 0
 
 
+def test_material_consumption_plot_data_has_one_row_per_user_component() -> None:
+    material_consumption = pd.DataFrame(
+        [
+            {"component": "Semaglutide", "total_mass_g": 12.5, "total_mass_kg": 0.0125},
+            {"component": "SNAC", "total_mass_g": 100.0, "total_mass_kg": 0.1},
+            {"component": "API pure equivalent", "total_mass_g": 10.0, "total_mass_kg": 0.01},
+            {"component": "API drug substance weighed", "total_mass_g": 12.5, "total_mass_kg": 0.0125},
+            {"component": "API impurity/material fraction", "total_mass_g": 2.5, "total_mass_kg": 0.0025},
+        ]
+    )
+
+    plot_data = build_material_consumption_plot_data(material_consumption)
+
+    assert plot_data["component"].tolist() == ["Semaglutide", "SNAC"]
+    assert len(plot_data) == 2
+    assert float(plot_data.loc[plot_data["component"] == "Semaglutide", "total_mass_g"].iloc[0]) == pytest.approx(12.5)
+
+
+def test_material_consumption_plot_data_uses_api_ds_for_api_component() -> None:
+    api_pure_mg_g = 10.0
+    api_content_mg_mg = 0.8
+    batch_size_kg = 1.0
+    api_ds_consumption_g = api_pure_mg_g / api_content_mg_mg * batch_size_kg
+    material_consumption = pd.DataFrame(
+        [
+            {"component": "API", "total_mass_g": api_ds_consumption_g, "total_mass_kg": api_ds_consumption_g / 1000.0},
+            {"component": "Filler", "total_mass_g": 987.5, "total_mass_kg": 0.9875},
+            {"component": "API pure equivalent", "total_mass_g": api_pure_mg_g, "total_mass_kg": 0.01},
+            {
+                "component": "API drug substance weighed",
+                "total_mass_g": api_ds_consumption_g,
+                "total_mass_kg": api_ds_consumption_g / 1000.0,
+            },
+        ]
+    )
+
+    plot_data = build_material_consumption_plot_data(material_consumption)
+
+    api_bar_value = float(plot_data.loc[plot_data["component"] == "API", "total_mass_g"].iloc[0])
+    assert api_bar_value == pytest.approx(12.5)
+    assert api_bar_value != pytest.approx(10.0)
+
+
+def test_material_consumption_plot_png_created(local_tmp_path: Path) -> None:
+    material_consumption = pd.DataFrame(
+        [
+            {"component": "API", "total_mass_g": 12.5, "total_mass_kg": 0.0125},
+            {"component": "Excipient", "total_mass_g": 987.5, "total_mass_kg": 0.9875},
+            {"component": "API pure equivalent", "total_mass_g": 10.0, "total_mass_kg": 0.01},
+            {"component": "API drug substance weighed", "total_mass_g": 12.5, "total_mass_kg": 0.0125},
+        ]
+    )
+    output_path = local_tmp_path / "material_consumption.png"
+
+    plot_material_consumption(material_consumption, output_path)
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
 def test_pairwise_combination_count_for_4_variables_is_6() -> None:
     cfg = build_example_run_config()
     design = _example_design_table()
@@ -271,3 +341,233 @@ def test_export_smoke_creates_pairwise_plots_for_manual_case(local_tmp_path: Pat
 
     manifest = pd.read_csv(manifest_path)
     assert len(manifest) == 6
+
+
+def _reuse_map_design_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "batch_id": "CAL-LOW",
+                "batch_role": "calibration",
+                "source": "generated",
+                "forced": False,
+                "api_pure_mg_g": 5.0,
+                "is_target_strength": False,
+            },
+            {
+                "batch_id": "CAL-HIGH",
+                "batch_role": "calibration",
+                "source": "generated",
+                "forced": False,
+                "api_pure_mg_g": 30.0,
+                "is_target_strength": False,
+            },
+            {
+                "batch_id": "CAL-TARGET",
+                "batch_role": "target_strength",
+                "source": "generated",
+                "forced": False,
+                "api_pure_mg_g": 10.0,
+                "is_target_strength": True,
+            },
+        ]
+    )
+
+
+def _reuse_map_assignments() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"batch_id": "CAL-LOW", "strength_model": "Strength 1", "included": True, "role_in_model": "primary"},
+            {"batch_id": "CAL-HIGH", "strength_model": "Strength 2", "included": True, "role_in_model": "primary"},
+            {"batch_id": "CAL-TARGET", "strength_model": "Strength 1", "included": True, "role_in_model": "primary"},
+        ]
+    )
+
+
+def test_batch_reuse_map_rows_sort_by_api_pure_descending() -> None:
+    plot_data = build_batch_reuse_map_plot_data(
+        assignments=_reuse_map_assignments(),
+        design_table=_reuse_map_design_table(),
+    )
+
+    assert plot_data["batch_ids"] == ["CAL-HIGH", "CAL-TARGET", "CAL-LOW"]
+    assert plot_data["api_pure_mg_g"] == [30.0, 10.0, 5.0]
+
+
+def test_batch_reuse_map_matrix_codes_empty_non_target_and_target() -> None:
+    plot_data = build_batch_reuse_map_plot_data(
+        assignments=_reuse_map_assignments(),
+        design_table=_reuse_map_design_table(),
+    )
+
+    matrix = plot_data["matrix"]
+    assert matrix.tolist() == [
+        [0, 1],
+        [2, 0],
+        [1, 0],
+    ]
+
+
+def test_batch_reuse_map_target_detection_from_role_when_flag_missing() -> None:
+    design_table = _reuse_map_design_table().drop(columns=["is_target_strength"])
+    plot_data = build_batch_reuse_map_plot_data(
+        assignments=_reuse_map_assignments(),
+        design_table=design_table,
+    )
+
+    assert plot_data["is_target_strength"] == [False, True, False]
+
+
+def test_batch_reuse_map_target_name_overrides_non_target_flag() -> None:
+    design_table = _reuse_map_design_table()
+    design_table.loc[design_table["batch_id"] == "CAL-TARGET", "batch_role"] = "calibration"
+    design_table.loc[design_table["batch_id"] == "CAL-TARGET", "is_target_strength"] = False
+    design_table.loc[design_table["batch_id"] == "CAL-TARGET", "target_strength_name"] = "Strength 1"
+
+    plot_data = build_batch_reuse_map_plot_data(
+        assignments=_reuse_map_assignments(),
+        design_table=design_table,
+    )
+
+    assert plot_data["matrix"].tolist()[1][0] == 2
+    assert plot_data["is_target_strength"] == [False, True, False]
+
+
+def test_batch_reuse_map_nominal_target_match_gives_target_state() -> None:
+    cfg = build_example_run_config()
+    design_table = _example_design_table().copy()
+    design_table.loc[design_table["batch_id"] == "CAL-002", "batch_role"] = "calibration"
+    design_table.loc[design_table["batch_id"] == "CAL-002", "source"] = "generated"
+    design_table.loc[design_table["batch_id"] == "CAL-002", "forced"] = False
+    design_table.loc[design_table["batch_id"] == "CAL-002", "is_target_strength"] = False
+    design_table.loc[design_table["batch_id"] == "CAL-002", "target_strength_name"] = ""
+    assignments = pd.DataFrame(
+        [
+            {"batch_id": "CAL-002", "strength_model": "1%", "included": True, "role_in_model": "primary"},
+        ]
+    )
+
+    plot_data = build_batch_reuse_map_plot_data(
+        assignments=assignments,
+        design_table=design_table,
+        config=cfg,
+        tolerance_mg_g=0.001,
+    )
+
+    assert plot_data["matrix"].tolist() == [[0], [2], [0]]
+
+
+def test_api_calibration_range_whiskers_percent_of_target() -> None:
+    cfg = build_example_run_config()
+    cfg.product_strengths = [
+        ProductStrength(name="Strength 1", component_targets_mg_g={"API": 10.0}),
+        ProductStrength(name="Strength 2", component_targets_mg_g={"API": 30.0}),
+        ProductStrength(name="Strength 3", component_targets_mg_g={"API": 50.0}),
+        ProductStrength(name="Strength 4", component_targets_mg_g={"API": 100.0}),
+    ]
+    cfg.api_calibration_range_settings = ApiCalibrationRangeSettings(
+        mode="percent_of_target",
+        lower=50.0,
+        upper=150.0,
+        api_levels=5,
+        include_target_api_level=True,
+    )
+
+    ranges = build_api_calibration_range_whiskers(
+        config=cfg,
+        strength_models=["Strength 1", "Strength 2", "Strength 3", "Strength 4"],
+    )
+
+    assert [(row["lower_api_mg_g"], row["upper_api_mg_g"]) for row in ranges] == [
+        (5.0, 15.0),
+        (15.0, 45.0),
+        (25.0, 75.0),
+        (50.0, 150.0),
+    ]
+
+
+def test_api_calibration_range_whiskers_absolute_mg_g() -> None:
+    cfg = build_example_run_config()
+    cfg.product_strengths = [
+        ProductStrength(name="Strength 1", component_targets_mg_g={"API": 10.0}),
+        ProductStrength(name="Strength 2", component_targets_mg_g={"API": 30.0}),
+    ]
+    cfg.api_calibration_range_settings = ApiCalibrationRangeSettings(
+        mode="absolute_mg_g",
+        lower=5.0,
+        upper=55.0,
+        api_levels=5,
+        include_target_api_level=True,
+    )
+
+    ranges = build_api_calibration_range_whiskers(config=cfg, strength_models=["Strength 1", "Strength 2"])
+
+    assert [(row["lower_api_mg_g"], row["upper_api_mg_g"]) for row in ranges] == [(5.0, 55.0), (5.0, 55.0)]
+
+
+def test_api_value_to_y_position_maps_higher_api_toward_top() -> None:
+    sorted_api_values = [100.0, 50.0, 10.0]
+
+    assert api_value_to_y_position(100.0, sorted_api_values) == pytest.approx(0.0)
+    assert api_value_to_y_position(50.0, sorted_api_values) == pytest.approx(1.0)
+    assert api_value_to_y_position(10.0, sorted_api_values) == pytest.approx(2.0)
+    assert api_value_to_y_position(75.0, sorted_api_values) == pytest.approx(0.5)
+    assert api_value_to_y_position(150.0, sorted_api_values) == pytest.approx(0.0)
+    assert api_value_to_y_position(5.0, sorted_api_values) == pytest.approx(2.0)
+
+
+def test_batch_reuse_map_png_created(local_tmp_path: Path) -> None:
+    output_path = local_tmp_path / "batch_reuse_map.png"
+
+    plot_batch_reuse_map(
+        assignments=_reuse_map_assignments(),
+        design_table=_reuse_map_design_table(),
+        output_path=output_path,
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+def test_batch_reuse_map_does_not_add_colorbar(monkeypatch: pytest.MonkeyPatch, local_tmp_path: Path) -> None:
+    def fail_colorbar(self: Figure, *args: object, **kwargs: object) -> None:
+        raise AssertionError("Batch Reuse Map should not add a continuous colorbar")
+
+    monkeypatch.setattr(Figure, "colorbar", fail_colorbar)
+    output_path = local_tmp_path / "batch_reuse_map.png"
+
+    plot_batch_reuse_map(
+        assignments=_reuse_map_assignments(),
+        design_table=_reuse_map_design_table(),
+        config=build_example_run_config(),
+        output_path=output_path,
+    )
+
+    assert output_path.exists()
+
+
+def test_batch_reuse_map_legend_is_anchored_beyond_secondary_axis(
+    monkeypatch: pytest.MonkeyPatch,
+    local_tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    original_legend = Axes.legend
+
+    def capture_legend(self: Axes, *args: object, **kwargs: object) -> object:
+        captured["bbox_to_anchor"] = kwargs.get("bbox_to_anchor")
+        captured["fontsize"] = kwargs.get("fontsize")
+        return original_legend(self, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "legend", capture_legend)
+    output_path = local_tmp_path / "batch_reuse_map.png"
+
+    plot_batch_reuse_map(
+        assignments=_reuse_map_assignments(),
+        design_table=_reuse_map_design_table(),
+        config=build_example_run_config(),
+        output_path=output_path,
+    )
+
+    assert captured["bbox_to_anchor"][0] >= 1.45  # type: ignore[index]
+    assert captured["fontsize"] == 8
+    assert output_path.exists()

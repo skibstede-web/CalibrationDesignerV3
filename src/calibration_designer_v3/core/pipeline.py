@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from calibration_designer_v3.core.diagnostic_explanations import with_diagnostic_explanations
 from calibration_designer_v3.core.assignment import assign_batches_to_strength_models
 from calibration_designer_v3.core.design_engine import DesignSelectionResult, select_calibration_design
 from calibration_designer_v3.core.diagnostics import DiagnosticsResult, calculate_diagnostics
@@ -58,6 +59,7 @@ def run_design_pipeline(config: RunConfig) -> PipelineResult:
         ]
     )
     diagnostics.summary = pd.concat([diagnostics.summary, additional_rows], ignore_index=True)
+    diagnostics.summary = with_diagnostic_explanations(diagnostics.summary)
     assignments = assign_batches_to_strength_models(batches=design.batches, config=config)
 
     warnings = [*design.warnings, *diagnostics.warnings]

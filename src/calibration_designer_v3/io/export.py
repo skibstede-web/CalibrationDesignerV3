@@ -10,6 +10,7 @@ import pandas as pd
 
 from calibration_designer_v3.core.composition import calculate_component_masses
 from calibration_designer_v3.core.pipeline import PipelineResult
+from calibration_designer_v3.core.diagnostic_explanations import with_diagnostic_explanations
 from calibration_designer_v3.models.domain import CalibrationBatch, RunConfig, WarningEntry
 from calibration_designer_v3.plotting.plots import (
     PAIRWISE_DIRNAME,
@@ -230,6 +231,7 @@ def export_design_run(
         ]
     )
     diagnostics_summary = pd.concat([diagnostics_summary, pairwise_metrics], ignore_index=True)
+    diagnostics_summary = with_diagnostic_explanations(diagnostics_summary)
 
     design_table.to_csv(run_folder / "calibration_design_table.csv", index=False)
     weighing_sheet.to_csv(run_folder / "batch_weighing_sheet.csv", index=False)
@@ -251,7 +253,13 @@ def export_design_run(
         config=config,
     )
     plot_material_consumption(material_consumption=material_summary, output_path=run_folder / "material_consumption.png")
-    plot_batch_reuse_map(assignments=assignments, output_path=run_folder / "batch_reuse_map.png")
+    plot_batch_reuse_map(
+        assignments=assignments,
+        design_table=design_table,
+        config=config,
+        tolerance_mg_g=max(config.tolerance_mg_g, 0.001),
+        output_path=run_folder / "batch_reuse_map.png",
+    )
 
     run_configuration = config.model_dump()
     run_configuration["exported_at"] = datetime.now().isoformat(timespec="seconds")

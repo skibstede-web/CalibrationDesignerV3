@@ -16,3 +16,4 @@ def test_example_config_generates_design() -> None:
     assert "feasible_candidates_after_balance" in metrics
     assert "selected_balance_component" in metrics
     assert "selected_calibration_batches" in metrics
+    assert "explanation" in result.diagnostics.summary.columns

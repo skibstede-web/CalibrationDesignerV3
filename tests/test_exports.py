@@ -90,3 +90,5 @@ def test_diagnostics_summary_contains_pairwise_metrics(local_tmp_path: Path) -> 
     metrics = set(summary["metric"].tolist())
     assert "pairwise_plot_count" in metrics
     assert "target_strength_points_in_design" in metrics
+    assert "explanation" in summary.columns
+    assert "interpretation" not in summary.columns

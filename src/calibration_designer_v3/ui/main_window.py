@@ -7,12 +7,15 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+import pandas as pd
+
 try:
     from PIL import Image, ImageTk
 except ImportError:  # pragma: no cover - defensive runtime fallback.
     Image = None  # type: ignore[assignment]
     ImageTk = None  # type: ignore[assignment]
 
+from calibration_designer_v3.core.diagnostic_explanations import with_diagnostic_explanations
 from calibration_designer_v3.core.diagnostics import calculate_diagnostics
 from calibration_designer_v3.core.guided_workflow import auto_select_balance_component, default_allow_variation_map
 from calibration_designer_v3.core.pipeline import PipelineResult, run_design_pipeline
@@ -39,6 +42,7 @@ from calibration_designer_v3.ui.input_state import (
     build_run_config_from_app_input_state,
     evaluate_strength_totals,
 )
+from calibration_designer_v3.ui.help_tooltips import HELP_TEXTS, HoverTooltip
 
 COLORS = {
     "primary": "#12355B",
@@ -49,6 +53,7 @@ COLORS = {
     "text": "#0B1F33",
     "secondary_text": "#5F6C7B",
     "border": "#D8E0E8",
+    "table_grid": "#9E9E9E",
     "warning_bg": "#FFF4DD",
 }
 
@@ -121,6 +126,8 @@ class CalibrationDesignerApp:
         self._header_logo_image: object | None = None
         self.input_section_vertical_scrollbars: list[tk.Scrollbar] = []
         self.input_section_cards: list[tk.Frame] = []
+        self._hover_tooltips: list[HoverTooltip] = []
+        self._help_icon_keys: list[str] = []
 
         self._build_layout()
         self._load_state_from_config(self.config)
@@ -386,18 +393,16 @@ class CalibrationDesignerApp:
     def _build_component_section(self, frame: tk.LabelFrame) -> None:
         controls = tk.Frame(frame)
         controls.pack(fill="x")
+        self.component_setup_controls_frame = controls
 
         tk.Label(controls, text="Number of components:").grid(row=0, column=0, sticky="w")
         self.component_count_var = tk.StringVar(value="0")
         tk.Entry(controls, textvariable=self.component_count_var, width=6).grid(row=0, column=1, padx=(4, 8))
-        tk.Button(controls, text="Apply", command=self._apply_component_count).grid(row=0, column=2, padx=(0, 12))
-        tk.Button(controls, text="Refresh names", command=self._refresh_dependent_sections).grid(row=0, column=3, padx=(0, 12))
+        self._attach_help_icon(controls, row=0, column=2, help_key="component_count")
+        tk.Button(controls, text="Apply", command=self._apply_component_count).grid(row=0, column=3, padx=(0, 12))
+        tk.Button(controls, text="Refresh names", command=self._refresh_dependent_sections).grid(row=0, column=4, padx=(0, 12))
 
-        tk.Label(controls, text="API content (mg/mg):").grid(row=0, column=4, sticky="w")
         self.api_content_var = tk.StringVar(value="0.80")
-        api_content_entry = tk.Entry(controls, textvariable=self.api_content_var, width=10)
-        api_content_entry.grid(row=0, column=5, padx=(4, 4))
-        api_content_entry.bind("<KeyRelease>", self._on_strength_value_edited)
 
         self.component_api_index_var = tk.IntVar(value=0)
         self.component_balance_index_var = tk.IntVar(value=0)
@@ -407,6 +412,15 @@ class CalibrationDesignerApp:
         self.component_rows_frame = tk.Frame(frame)
         self.component_rows_frame.pack(fill="x", pady=(6, 0))
 
+        api_content_frame = tk.Frame(frame)
+        api_content_frame.pack(fill="x", pady=(8, 0))
+        self.component_api_content_frame = api_content_frame
+        tk.Label(api_content_frame, text="API content (mg/mg):").grid(row=0, column=0, sticky="w")
+        self.api_content_entry = tk.Entry(api_content_frame, textvariable=self.api_content_var, width=10)
+        self.api_content_entry.grid(row=0, column=1, padx=(6, 0), sticky="w")
+        self._attach_help_icon(api_content_frame, row=0, column=2, help_key="api_content_mg_mg")
+        self.api_content_entry.bind("<KeyRelease>", self._on_strength_value_edited)
+
     def _build_strength_section(self, frame: tk.LabelFrame) -> None:
         controls = tk.Frame(frame)
         controls.pack(fill="x")
@@ -414,7 +428,8 @@ class CalibrationDesignerApp:
         tk.Label(controls, text="Number of target strengths:").grid(row=0, column=0, sticky="w")
         self.strength_count_var = tk.StringVar(value="0")
         tk.Entry(controls, textvariable=self.strength_count_var, width=6).grid(row=0, column=1, padx=(4, 8))
-        tk.Button(controls, text="Apply", command=self._apply_strength_count).grid(row=0, column=2, padx=(0, 8))
+        self._attach_help_icon(controls, row=0, column=2, help_key="strength_count")
+        tk.Button(controls, text="Apply", command=self._apply_strength_count).grid(row=0, column=3, padx=(0, 8))
 
         self.strength_rows: list[dict[str, object]] = []
         self.strength_rows_frame = tk.Frame(frame)
@@ -437,23 +452,29 @@ class CalibrationDesignerApp:
             state="readonly",
             width=20,
         ).grid(row=0, column=1, sticky="w")
+        self._attach_help_icon(frame, row=0, column=2, help_key="api_range_mode")
         tk.Label(frame, text="Lower").grid(row=1, column=0, sticky="w")
         self.api_range_lower_var = tk.StringVar(value="60")
         tk.Entry(frame, textvariable=self.api_range_lower_var, width=10).grid(row=1, column=1, sticky="w")
+        self._attach_help_icon(frame, row=1, column=2, help_key="api_lower_level")
         tk.Label(frame, text="Upper").grid(row=2, column=0, sticky="w")
         self.api_range_upper_var = tk.StringVar(value="140")
         tk.Entry(frame, textvariable=self.api_range_upper_var, width=10).grid(row=2, column=1, sticky="w")
+        self._attach_help_icon(frame, row=2, column=2, help_key="api_upper_level")
         tk.Label(frame, text="API levels").grid(row=3, column=0, sticky="w")
         self.api_range_levels_var = tk.StringVar(value="5")
         tk.Entry(frame, textvariable=self.api_range_levels_var, width=10).grid(row=3, column=1, sticky="w")
+        self._attach_help_icon(frame, row=3, column=2, help_key="api_level_count")
         self.include_target_api_level_var = tk.BooleanVar(value=True)
         self.apply_same_api_range_var = tk.BooleanVar(value=True)
         tk.Checkbutton(frame, text="Include target API level", variable=self.include_target_api_level_var).grid(
             row=4, column=0, columnspan=2, sticky="w"
         )
+        self._attach_help_icon(frame, row=4, column=2, help_key="include_target_api_level")
         tk.Checkbutton(frame, text="Apply same API range to all strengths", variable=self.apply_same_api_range_var).grid(
             row=5, column=0, columnspan=2, sticky="w"
         )
+        self._attach_help_icon(frame, row=5, column=2, help_key="apply_same_api_range")
 
     def _build_variation_section(self, frame: tk.LabelFrame) -> None:
         tk.Label(frame, text="Variation preset").grid(row=0, column=0, sticky="w")
@@ -465,6 +486,7 @@ class CalibrationDesignerApp:
             state="readonly",
             width=16,
         ).grid(row=0, column=1, sticky="w")
+        self._attach_help_icon(frame, row=0, column=2, help_key="variation_preset")
         self.keep_glidant_fixed_var = tk.BooleanVar(value=True)
         self.auto_select_balance_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
@@ -475,6 +497,7 @@ class CalibrationDesignerApp:
         ).grid(
             row=1, column=0, columnspan=2, sticky="w"
         )
+        self._attach_help_icon(frame, row=1, column=2, help_key="keep_glidant_lubricant_fixed")
         tk.Checkbutton(
             frame,
             text="Auto-select balance component",
@@ -483,9 +506,11 @@ class CalibrationDesignerApp:
         ).grid(
             row=2, column=0, columnspan=2, sticky="w"
         )
+        self._attach_help_icon(frame, row=2, column=2, help_key="auto_select_balance_component")
         tk.Label(frame, text="Manual balance override").grid(row=3, column=0, sticky="w")
         self.manual_balance_override_var = tk.StringVar(value="")
         tk.Entry(frame, textvariable=self.manual_balance_override_var, width=18).grid(row=3, column=1, sticky="w")
+        self._attach_help_icon(frame, row=3, column=2, help_key="manual_balance_override")
         self.component_variation_allowed_vars: dict[str, tk.BooleanVar] = {}
         self.component_custom_variation_pct_vars: dict[str, tk.StringVar] = {}
         self.variation_components_frame = tk.Frame(frame)
@@ -508,7 +533,8 @@ class CalibrationDesignerApp:
         for i, (key, label) in enumerate(self.objective_fields):
             var = tk.BooleanVar(value=False)
             self.objective_vars[key] = var
-            tk.Checkbutton(frame, text=label, variable=var).grid(row=start_row + i, column=0, columnspan=3, sticky="w")
+            tk.Checkbutton(frame, text=label, variable=var).grid(row=start_row + i, column=0, columnspan=2, sticky="w")
+            self._attach_help_icon(frame, row=start_row + i, column=2, help_key=key)
 
     def _build_batch_section(self, frame: tk.LabelFrame) -> None:
         self.batch_field_specs = [
@@ -537,6 +563,7 @@ class CalibrationDesignerApp:
                 var = tk.StringVar(value="")
                 self.batch_vars[key] = var
                 tk.Entry(frame, textvariable=var, width=16).grid(row=i, column=1, sticky="w")
+            self._attach_help_icon(frame, row=i, column=2, help_key=key)
 
     def _build_manual_section(self, frame: tk.LabelFrame) -> None:
         wrapper = tk.Frame(frame)
@@ -603,12 +630,35 @@ class CalibrationDesignerApp:
         style.theme_use(style.theme_use())
         style.configure("V3.TNotebook", background=COLORS["panel"], borderwidth=0)
         style.configure("V3.TNotebook.Tab", padding=(10, 6))
+        style.configure(
+            "Diagnostics.Treeview",
+            background=COLORS["panel"],
+            fieldbackground=COLORS["panel"],
+            foreground=COLORS["text"],
+            rowheight=26,
+            borderwidth=1,
+            relief=tk.SOLID,
+        )
+        style.configure(
+            "Diagnostics.Treeview.Heading",
+            background=COLORS["secondary_panel"],
+            foreground=COLORS["text"],
+            font=("Segoe UI", 10, "bold"),
+            borderwidth=1,
+            relief=tk.SOLID,
+        )
 
         notebook = ttk.Notebook(output_card, style="V3.TNotebook")
         notebook.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
 
         self.design_tab = tk.Text(notebook, wrap="none")
-        self.diagnostics_tab = tk.Text(notebook, wrap="none")
+        self.diagnostics_tab = tk.Frame(
+            notebook,
+            bg=COLORS["panel"],
+            highlightbackground=COLORS["table_grid"],
+            highlightthickness=1,
+            bd=0,
+        )
         self.plots_tab = tk.Frame(notebook)
         self.export_tab = tk.Text(notebook, wrap="word")
 
@@ -618,6 +668,64 @@ class CalibrationDesignerApp:
         notebook.add(self.export_tab, text="Export/run folder")
 
         self._build_plots_tab_widgets()
+        self._build_diagnostics_table_widgets()
+
+    def _build_diagnostics_table_widgets(self) -> None:
+        self.diagnostics_tab.grid_rowconfigure(0, weight=1)
+        self.diagnostics_tab.grid_columnconfigure(0, weight=1)
+
+        self.diagnostics_tree = ttk.Treeview(
+            self.diagnostics_tab,
+            columns=(),
+            show="headings",
+            style="Diagnostics.Treeview",
+        )
+        y_scroll = tk.Scrollbar(self.diagnostics_tab, orient=tk.VERTICAL, command=self.diagnostics_tree.yview)
+        x_scroll = tk.Scrollbar(self.diagnostics_tab, orient=tk.HORIZONTAL, command=self.diagnostics_tree.xview)
+        self.diagnostics_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        self.diagnostics_tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        self.diagnostics_tree.tag_configure("odd", background="#F7F9FA")
+        self.diagnostics_tree.tag_configure("even", background=COLORS["panel"])
+
+    def _clear_diagnostics_table(self) -> None:
+        self.diagnostics_tree.delete(*self.diagnostics_tree.get_children())
+        self.diagnostics_tree.configure(columns=())
+
+    def _render_diagnostics_table(self, summary: pd.DataFrame) -> None:
+        self._clear_diagnostics_table()
+        if summary.empty:
+            return
+
+        columns = [str(column) for column in summary.columns]
+        self.diagnostics_tree.configure(columns=columns)
+        width_by_column = {
+            "metric": 240,
+            "value": 130,
+            "threshold": 180,
+            "status": 110,
+            "explanation": 620,
+        }
+        for column in columns:
+            self.diagnostics_tree.heading(column, text=column, anchor="w")
+            self.diagnostics_tree.column(
+                column,
+                anchor="w",
+                stretch=True,
+                width=width_by_column.get(column, 180),
+                minwidth=90,
+            )
+
+        for row_index, (_idx, row) in enumerate(summary.iterrows()):
+            values = ["" if pd.isna(row[column]) else str(row[column]) for column in summary.columns]
+            self.diagnostics_tree.insert(
+                "",
+                tk.END,
+                values=values,
+                tags=("even" if row_index % 2 == 0 else "odd",),
+            )
 
     def _build_plots_tab_widgets(self) -> None:
         self.plots_tab.grid_rowconfigure(0, weight=1)
@@ -697,6 +805,34 @@ class CalibrationDesignerApp:
             fg=COLORS["secondary_text"],
             anchor="w",
         ).grid(row=0, column=10, sticky="ew", padx=12)
+
+    def _attach_help_icon(self, parent: tk.Widget, *, row: int, column: int, help_key: str) -> None:
+        text = HELP_TEXTS.get(help_key)
+        if not text:
+            return
+
+        background = parent.cget("bg") if "bg" in parent.keys() else COLORS["panel"]
+        icon = tk.Canvas(
+            parent,
+            width=16,
+            height=16,
+            bg=background,
+            bd=0,
+            highlightthickness=0,
+            cursor="question_arrow",
+        )
+        icon.create_oval(1, 1, 15, 15, outline=COLORS["secondary_text"], fill=COLORS["panel"])
+        icon.create_text(8, 8, text="?", fill=COLORS["secondary_text"], font=("Segoe UI", 8, "bold"))
+        icon.grid(row=row, column=column, sticky="w", padx=(4, 0))
+        self._hover_tooltips.append(HoverTooltip(icon, text=text, wraplength=380))
+        self._help_icon_keys.append(help_key)
+
+    def _grid_header_with_help(self, parent: tk.Widget, *, text: str, help_key: str, row: int, column: int, padx: int = 2) -> None:
+        background = parent.cget("bg") if "bg" in parent.keys() else COLORS["panel"]
+        cell = tk.Frame(parent, bg=background)
+        cell.grid(row=row, column=column, sticky="w", padx=padx)
+        tk.Label(cell, text=text, font=INPUT_TABLE_HEADER_FONT, bg=background).grid(row=0, column=0, sticky="w")
+        self._attach_help_icon(cell, row=0, column=1, help_key=help_key)
 
     def _load_state_from_config(self, config: RunConfig) -> None:
         component_names = [component.name for component in config.components]
@@ -867,11 +1003,19 @@ class CalibrationDesignerApp:
         for widget in self.component_rows_frame.winfo_children():
             widget.destroy()
 
-        headers = ["#", "Name", "Type", "API", "Balance"]
-        for j, text in enumerate(headers):
-            tk.Label(self.component_rows_frame, text=text, font=INPUT_TABLE_HEADER_FONT).grid(
-                row=0, column=j, sticky="w", padx=2
-            )
+        tk.Label(self.component_rows_frame, text="#", font=INPUT_TABLE_HEADER_FONT).grid(row=0, column=0, sticky="w", padx=2)
+        self._grid_header_with_help(
+            self.component_rows_frame, text="Name", help_key="component_name", row=0, column=1
+        )
+        self._grid_header_with_help(
+            self.component_rows_frame, text="Type", help_key="component_type", row=0, column=2
+        )
+        self._grid_header_with_help(
+            self.component_rows_frame, text="API", help_key="api_component_selector", row=0, column=3
+        )
+        self._grid_header_with_help(
+            self.component_rows_frame, text="Balance", help_key="balance_component_selector", row=0, column=4
+        )
 
         while len(self.component_type_vars) < len(self.component_name_vars):
             self.component_type_vars.append(tk.StringVar(value="major_excipient"))
@@ -903,20 +1047,41 @@ class CalibrationDesignerApp:
             widget.destroy()
 
         component_names = [var.get().strip() or f"Component{i + 1}" for i, var in enumerate(self.component_name_vars)]
-        tk.Label(self.strength_rows_frame, text="Strength", font=INPUT_TABLE_HEADER_FONT).grid(row=0, column=0, sticky="w", padx=2)
+        self._grid_header_with_help(
+            self.strength_rows_frame, text="Strength", help_key="strength_name", row=0, column=0
+        )
         for i, component_name in enumerate(component_names):
-            tk.Label(self.strength_rows_frame, text=component_name, font=INPUT_TABLE_HEADER_FONT).grid(
-                row=0, column=i + 1, sticky="w", padx=2
+            self._grid_header_with_help(
+                self.strength_rows_frame,
+                text=component_name,
+                help_key="component_concentration_mg_g",
+                row=0,
+                column=i + 1,
             )
         metrics_col = len(component_names) + 1
-        tk.Label(self.strength_rows_frame, text="API DS mg/g", font=INPUT_TABLE_HEADER_FONT).grid(
-            row=0, column=metrics_col, sticky="w", padx=6
+        self._grid_header_with_help(
+            self.strength_rows_frame,
+            text="API DS mg/g",
+            help_key="api_ds_mg_g_display",
+            row=0,
+            column=metrics_col,
+            padx=6,
         )
-        tk.Label(self.strength_rows_frame, text="Weighed total mg/g", font=INPUT_TABLE_HEADER_FONT).grid(
-            row=0, column=metrics_col + 1, sticky="w", padx=6
+        self._grid_header_with_help(
+            self.strength_rows_frame,
+            text="Weighed total mg/g",
+            help_key="weighed_total_status",
+            row=0,
+            column=metrics_col + 1,
+            padx=6,
         )
-        tk.Label(self.strength_rows_frame, text="Status", font=INPUT_TABLE_HEADER_FONT).grid(
-            row=0, column=metrics_col + 2, sticky="w", padx=6
+        self._grid_header_with_help(
+            self.strength_rows_frame,
+            text="Status",
+            help_key="weighed_total_status",
+            row=0,
+            column=metrics_col + 2,
+            padx=6,
         )
 
         for row_index, row in enumerate(self.strength_rows, start=1):
@@ -1095,10 +1260,22 @@ class CalibrationDesignerApp:
             tk.Checkbutton(self.variation_components_frame, text=f"Allow {name} variation", variable=allow_var).grid(
                 row=row_idx, column=0, sticky="w"
             )
-            tk.Entry(self.variation_components_frame, textvariable=custom_pct, width=7).grid(
-                row=row_idx, column=1, sticky="w", padx=(6, 0)
+            self._attach_help_icon(
+                self.variation_components_frame,
+                row=row_idx,
+                column=1,
+                help_key="allow_variation_by_component",
             )
-            tk.Label(self.variation_components_frame, text="% (custom)").grid(row=row_idx, column=2, sticky="w", padx=(2, 0))
+            tk.Entry(self.variation_components_frame, textvariable=custom_pct, width=7).grid(
+                row=row_idx, column=2, sticky="w", padx=(6, 0)
+            )
+            tk.Label(self.variation_components_frame, text="% (custom)").grid(row=row_idx, column=3, sticky="w", padx=(2, 0))
+            self._attach_help_icon(
+                self.variation_components_frame,
+                row=row_idx,
+                column=4,
+                help_key="custom_variation_percentages",
+            )
             row_idx += 1
 
     def _auto_select_balance_index(self) -> None:
@@ -1450,7 +1627,7 @@ class CalibrationDesignerApp:
         self.last_output_folder = None
         self._load_state_from_config(self.config)
         self._set_text(self.design_tab, "Loaded example configuration. Edit inputs and click 'Generate design'.")
-        self._set_text(self.diagnostics_tab, "")
+        self._clear_diagnostics_table()
         self._set_plots_tab_message("Generate and export a design run to preview plots here.")
         self._set_text(self.export_tab, "")
         self._set_status("Ready", "Example loaded. Review inputs and generate design.", "info")
@@ -1483,7 +1660,9 @@ class CalibrationDesignerApp:
             design_table.append(row)
 
         self._set_text(self.design_tab, "\n".join(str(row) for row in design_table))
-        self._set_text(self.diagnostics_tab, self.pipeline_result.diagnostics.summary.to_string(index=False))
+        diagnostics_summary = with_diagnostic_explanations(self.pipeline_result.diagnostics.summary)
+        self.pipeline_result.diagnostics.summary = diagnostics_summary
+        self._render_diagnostics_table(diagnostics_summary)
 
         self._set_plots_tab_message(
             "Design generated.\nExport the run to create plots and browse pairwise previews in this tab."
@@ -1510,13 +1689,14 @@ class CalibrationDesignerApp:
             return
 
         diagnostics = calculate_diagnostics(batches=self.pipeline_result.design.batches, config=self.config)
+        diagnostics.summary = with_diagnostic_explanations(diagnostics.summary)
         self.pipeline_result = PipelineResult(
             design=self.pipeline_result.design,
             diagnostics=diagnostics,
             assignments=self.pipeline_result.assignments,
             warnings=[*self.pipeline_result.design.warnings, *diagnostics.warnings],
         )
-        self._set_text(self.diagnostics_tab, self.pipeline_result.diagnostics.summary.to_string(index=False))
+        self._render_diagnostics_table(self.pipeline_result.diagnostics.summary)
         self._set_status("Success", "Diagnostics recalculated.", "success")
 
     def export_design(self) -> None:
